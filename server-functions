@@ -1,0 +1,30 @@
+#!/bin/bash
+
+function util:set-instance-cname-records() {
+    local instanceId=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+    local ec2PublicHostname=$(curl -s http://169.254.169.254/latest/meta-data/public-hostname)
+    for cname in "${@}"; do
+        local domainName=$(echo "${cname}" | sed -E 's/^[^\.]*\.//')
+        local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)
+        local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
+{
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "${cname}",
+        "Type": "CNAME",
+        "TTL": 300,
+        "ResourceRecords": [
+          {
+            "Value": "${ec2PublicHostname}"
+          }
+        ]
+      }
+    }
+  ]
+}
+END_OF_JSON
+        )
+    done
+}

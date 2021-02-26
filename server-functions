@@ -2,7 +2,7 @@
 
 export MAILSERVER_DATA_FILESYSTEM=${MAILSERVER_DATA_FILESYSTEM:-mailserver-data}
 export MAILSERVER_DATA_MOUNTPOINT=${MAILSERVER_DATA_MOUNTPOINT:-/var/mail}
-export MAILSERVER_CONFIGURATION_FILE=${MAILSERVER_DATA_MOUNTPOINT}/mailu.env}
+export MAILSERVER_CONFIGURATION_FILE=${MAILSERVER_CONFIGURATION_FILE:-/var/lib/mailu/mailu.env}
 export MAILSERVER_TOOLS_URL_PREFIX=${MAILSERVER_TOOLS_URL_PREFIX:-https://raw.githubusercontent.com/jim-hanlon/m-s/main}
 
 function instance:set-cname-records() {
@@ -44,18 +44,21 @@ function mailserver:initialize() {
 
 function mailserver:install_mailu_configuration() {
     local mailuKey=$(head /dev/urandom | tr -dc A-Z0-9 | head -c 16)
-    local version=$(( $(ls -1 "${MAILSERVER_CONFIGURATION_FILE}*" | grep -E '\.env(.[1-9][0-9]*)?$' | wc -l ) + 1 ))
+    local version=$(( $(ls -1 "${MAILSERVER_CONFIGURATION_FILE}*" 2>/dev/null | grep -E '\.env(.[1-9][0-9]*)?$' | wc -l ) + 1 ))
     [[ -f "${MAILSERVER_CONFIGURATION_FILE}" ]] && cp "${MAILSERVER_CONFIGURATION_FILE}" "${MAILSERVER_CONFIGURATION_FILE}${version}"
-    curl -s -k "${MAILSERVER_TOOLS_URL_PREFIX}/mailu.env | sed -E 's/^SECRET_KEY=.*$/SECRET_KEY='${mailUkey}'/' > "${MAILSERVER_CONFIGURATION_FILE}"
+    cat "${MAILSERVER_CONFIGURATION_FILE}${version}" | sed -E 's/^SECRET_KEY=.*$/SECRET_KEY='${mailuKey}'/' > "${MAILSERVER_CONFIGURATION_FILE}"
 }
 
 
 function mailserver:mount-mailserver-data() {
-    local fileSystemId=$(aws efs describe-file-systems | \
-                         jq '.FileSystems | select(.[].Tags[].Key == "Name") | select(.[].Tags[].Value == "${MAILSERVER_DATA_FILESYSTEM}") | .[].FileSystemId')
-    local fileSystemName=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone).${fileSystemId}.efs.$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document|grep region|awk -F\" '{print $4}').amazonaws.com:/" 
-    echo ${fileSystemName}:/ ${MAILSERVER_DATA_MOUNTPOINT} nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 0 0 >> /etc/fstab
+    local availabilityZone=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq '.availabilityZone' | tr -d '"')
+    local region=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq '.region' | tr -d '"')
+    local fileSystemId=$(aws --region ${region} efs describe-file-systems | \
+                         jq '.FileSystems | select(.[].Tags[].Key == "Name") | select(.[].Tags[].Value == "'${MAILSERVER_DATA_FILESYSTEM}'") | .[].FileSystemId' | tr -d '"')
+    local fileSystemName="${fileSystemId}.efs.${region}.amazonaws.com" 
+    echo "${fileSystemName}:/ ${MAILSERVER_DATA_MOUNTPOINT} nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 0 0" >> /etc/fstab
     mkdir -p "${MAILSERVER_DATA_MOUNTPOINT}"
+    chown nobody:nogroup "${MAILSERVER_DATA_MOUNTPOINT}"
     mount "${MAILSERVER_DATA_MOUNTPOINT}"
 }
 

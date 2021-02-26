@@ -13,7 +13,7 @@
 
 export MAILSERVER_KEY_PAIR=mailserver.hanlonsoftware.com
 export MAILSERVER_INSTANCE_PROFILE=Mailserver@jim.hanlonsoftware.com
-export MAILSERVER_INSTANCE_TYPE=t2.micro
+export MAILSERVER_INSTANCE_TYPE=t3.small
 export MAILSERVER_UBUNTU_RELEASE=focal
 
 function instance:set-cname-records() {

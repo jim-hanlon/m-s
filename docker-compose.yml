@@ -23,27 +23,28 @@ services:
     ports:
       # port access is controlled by the instance's security group'
       # HTTP (only open HTTPS)
-      - "172.30.3.156:80:80"
+      - "XXX.XXX.XXX.XXX:80:80"
       - "::1:80:80"
       # HTTPS
-      - "172.30.3.156:443:443"
+      - "XXX.XXX.XXX.XXX:443:443"
       - "::1:443:443"
       # SMTP
-      - "172.30.3.156:25:25"
+      - "XXX.XXX.XXX.XXX:25:25"
       - "::1:25:25"
-      # SMTPS (prefer
-      # - "172.30.3.156:465:465"
-      # - "::1:465:465"
-      # SMTP
-      - "172.30.3.156:587:587"
+      # SMTPS (prefered)
+      - "XXX.XXX.XXX.XXX:465:465"
+      - "::1:465:465"
+      # SMTP (TLS/SSL)
+      - "XXX.XXX.XXX.XXX:587:587"
       - "::1:587:587"
-      # - "172.30.3.156:110:110"
+      # - "XXX.XXX.XXX.XXX:110:110"
       # - "::1:110:110"
-      - "172.30.3.156:995:995"
-      - "::1:995:995"
-      - "172.30.3.156:143:143"
-      - "::1:143:143"
-      - "172.30.3.156:993:993"
+      # - "XXX.XXX.XXX.XXX:995:995"
+      # - "::1:995:995"
+      # - "XXX.XXX.XXX.XXX:143:143"
+      # - "::1:143:143"
+      # IMAPS (TLS/SSL)
+      - "XXX.XXX.XXX.XXX:993:993"
       - "::1:993:993"
     volumes:
       - "/var/mail/certs:/certs"

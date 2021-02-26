@@ -1,12 +1,66 @@
 #!/bin/bash
 
+export MAILSERVER_HOME=${MAILSERVER_HOME:-/var/lib/mailu}
+export MAILSERVER_CONFIGURATION_FILE=${MAILSERVER_CONFIGURATION_FILE:-${MAILSERVER_HOME}/mailu.env}
 export MAILSERVER_DATA_FILESYSTEM=${MAILSERVER_DATA_FILESYSTEM:-mailserver-data}
 export MAILSERVER_DATA_MOUNTPOINT=${MAILSERVER_DATA_MOUNTPOINT:-/var/mail}
-export MAILSERVER_CONFIGURATION_FILE=${MAILSERVER_CONFIGURATION_FILE:-/var/lib/mailu/mailu.env}
+export MAILSERVER_DOCKER_COMPOSE_FILE=${MAILSERVER_DOCKER_COMPOSE_FILE:-${MAILSERVER_HOME}/docker-compose.yml}
 export MAILSERVER_TOOLS_URL_PREFIX=${MAILSERVER_TOOLS_URL_PREFIX:-https://raw.githubusercontent.com/jim-hanlon/m-s/main}
 
+
+function instance:create-tag() {
+    local key=${1:?Need key}
+    local value=${2?Need value}
+    local instanceId=$(instance:id)
+    local region=$(instance:region)
+    aws ec2 create-tags --region "${region}" --resources "${instanceId}" --tags Key="${key}",Value="${value}"
+}
+
+
+function instance:delete-tag() {
+    local key=${1:?Need key}
+    local value=${2:-''}
+    local instanceId=$(instance:id)
+    local region=$(instance:region)
+    local tags=Key=${key}
+    [[ -n "${value}" ]] && tags="${tags},Value=${value}"
+    aws ec2 delete-tags --region "${region}" --resources "${instanceId}" --tags "${tags}"
+}
+
+
+function instance:id() {
+    curl -s http://169.254.169.254/latest/meta-data/instance-id
+}
+
+
+function instance:public-hostname() {
+    curl -s http://169.254.169.254/latest/meta-data/public-hostname
+}
+
+
+function instance:public-ipv4() {
+    curl -s http://169.254.169.254/latest/meta-data/public-ipv4
+}
+
+
+function instance:read-tag() {
+    local key=${1:?Need key}
+    local instanceId=$(instance:id)
+    local region=$(instance:region)
+    aws ec2 describe-tags --region "${region}" \
+        --filters Name=resource-id,Values=${instanceId} Name=key,Values=$key | jq '.Tags[].Value'
+}
+
+
+function instance:region() {
+    curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | \
+    jq '.region' | \
+    tr -d '"'
+}
+
+
 function instance:set-cname-records() {
-    local ec2PublicHostname=$(curl -s http://169.254.169.254/latest/meta-data/public-hostname)
+    local ec2PublicHostname=$(instance:public-hostname)
     for cname in "${@}"; do
         local domainName=$(echo "${cname}" | sed -E 's/^[^\.]*\.//')
         local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)
@@ -35,6 +89,12 @@ END_OF_JSON
 }
 
 
+function mailserver:idle() {
+    cd "${MAILSERVER_HOME}"
+    docker-compose -p mailu stop
+}
+
+
 function mailserver:initialize() {
     mailserver:mount-mailserver-data
     mailserver:install_mailu_configuration
@@ -42,17 +102,38 @@ function mailserver:initialize() {
 }
 
 
+function mailserver:install() {
+    if [[ -z $(instance:read-tag BootstrapStatus) ]]; then
+        mailserver:initialize
+        mailserver:start
+        for hostname in $(grep HOSTNAMES ${MAILSERVER_CONFIGURATION_FILE} | cut -d= -f2 | cut -d, -f1); do
+            docker-compose -p mailu exec admin flask mailu admin postmaster ${hostname} postmaster
+        done
+        (crontab -l 2>/dev/null; echo "@reboot /bin/bash -c 'source ${MAILSERVER_HOME}/server-functions && mailserver:initialize && mailserver:start'") | crontab -
+    fi
+    instance:create-tag BootstrapStatus complete
+}
+
+
 function mailserver:install_mailu_configuration() {
+    cd "${MAILSERVER_HOME}"
+    git pull
     local mailuKey=$(head /dev/urandom | tr -dc A-Z0-9 | head -c 16)
     local version=$(( $(ls -1 "${MAILSERVER_CONFIGURATION_FILE}*" 2>/dev/null | grep -E '\.env(.[1-9][0-9]*)?$' | wc -l ) + 1 ))
     [[ -f "${MAILSERVER_CONFIGURATION_FILE}" ]] && cp "${MAILSERVER_CONFIGURATION_FILE}" "${MAILSERVER_CONFIGURATION_FILE}.${version}"
     cat "${MAILSERVER_CONFIGURATION_FILE}.${version}" | sed -E 's/^SECRET_KEY=.*$/SECRET_KEY='${mailuKey}'/' > "${MAILSERVER_CONFIGURATION_FILE}"
+
+    local localIPv4=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+    version=$(( $(ls -1 "${MAILSERVER_DOCKER_COMPOSE_FILE}*" 2>/dev/null | grep -E '\.env(.[1-9][0-9]*)?$' | wc -l ) + 1 ))
+    [[ -f "${MAILSERVER_DOCKER_COMPOSE_FILE}" ]] && cp "${MAILSERVER_DOCKER_COMPOSE_FILE}" "${MAILSERVER_DOCKER_COMPOSE_FILE}.${version}"
+    cat "${MAILSERVER_DOCKER_COMPOSE_FILE}.${version}" | sed 's/XXX\.XXX\.XXX\.XXX/'${localIPv4}'/g' > "${MAILSERVER_DOCKER_COMPOSE_FILE}"
+    
 }
 
 
 function mailserver:mount-mailserver-data() {
     local availabilityZone=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq '.availabilityZone' | tr -d '"')
-    local region=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq '.region' | tr -d '"')
+    local region=$(instance:region)
     local fileSystemId=$(aws --region ${region} efs describe-file-systems | \
                          jq '.FileSystems | select(.[].Tags[].Key == "Name") | select(.[].Tags[].Value == "'${MAILSERVER_DATA_FILESYSTEM}'") | .[].FileSystemId' | tr -d '"')
     local fileSystemName="${fileSystemId}.efs.${region}.amazonaws.com" 
@@ -67,4 +148,15 @@ function mailserver:set-cnames() {
     instance:set-cname-records $(grep HOSTNAMES "${MAILSERVER_CONFIGURATION_FILE}" | cut -d= -f2 | cut -d, --output-delimiter ' ' -f1-)
 }
 
+
+function mailserver:start() {
+    cd "${MAILSERVER_HOME}"
+    docker-compose -p mailu up -d
+}
+
+
+function mailserver:stop() {
+    cd "${MAILSERVER_HOME}"
+    docker-compose -p mailu down --remove-orphans
+}
 

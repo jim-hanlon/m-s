@@ -6,6 +6,8 @@
 #
 # http://169.254.169.254/latest/meta-data/instance-id
 # http://169.254.169.254/latest/meta-data/placement/availability-zone
+# http://169.254.169.254/latest/meta-data/local-ipv4
+# http://169.254.169.254/latest/meta-data/local-hostname
 # http://169.254.169.254/latest/meta-data/public-hostname
 # http://169.254.169.254/latest/meta-data/public-ipv4
 #
@@ -46,6 +48,16 @@ END_OF_JSON
         )
     done
 }
+
+
+function instance:read-tag() {
+    local instanceId=${1:?Need instance ID}
+    local key=${2:?Need key}
+    # local region=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq '.region' | tr -d '"')
+    aws ec2 describe-tags --filters Name=resource-id,Values=${instanceId} Name=key,Values=$key | jq '.Tags[].Value'
+}
+
+
 function mailserver:authorize-my-ip-for-ssh-ingress() {
     local myIp=$(curl -s http://ipaddr.pub/ip)
     local securityGroup=$(mailserver:get-security-group)
@@ -59,10 +71,10 @@ function mailserver:authorize-my-ip-for-ssh-ingress() {
 
 
 mailserver:create-instance() {
+    # local postmasterPassword=${1:?Need postmaster password)
     local ami=$(ubuntu:find-latest-ami)
     local sg=$(mailserver:get-security-group)
     local subnet=$(util:find-random-subnet)
-    # local user_data_file=$(mktemp)
     local response=$(aws ec2 run-instances \
         --image-id "${ami}" \
         --count 1 \
@@ -70,6 +82,7 @@ mailserver:create-instance() {
         --key-name "${MAILSERVER_KEY_PAIR}" \
         --security-group-ids "${sg}" \
         --subnet-id "${subnet}" \
+        --instance-initiated-shutdown-behavior terminate \
         --user-data file:///dev/stdin <<EOF
 #!/bin/bash
 
@@ -120,20 +133,32 @@ pip3 install docker-compose
 mkdir -p /var/lib/mailu
 git clone https://github.com/jim-hanlon/m-s /var/lib/mailu
 source  /var/lib/mailu/server-functions
-mailserver:initialize
-(crontab -l 2>/dev/null; echo "@reboot /bin/bash -c 'source  /var/lib/mailu/server-functions; mailserver:initialize'") | crontab -
+mailserver:install
 EOF
 )
     local instance=$(echo "$response" | jq '.Instances[0].InstanceId' | sed -E 's/(^"|"$)//g')
-    echo "[INFO] created instance ${instance} ... waiting for it to start" >/dev/stderr
-    while [[ $(util:instance-state "${instance}") != 'running' ]]; do sleep 5; done
-    echo "[INFO] instance ${instance} is running" >/dev/stderr
-    local hostname=$(util:instance-public-hostname "${instance}")
-    echo "[INFO] setting ${instance} security profile" >/dev/stderr
-    aws ec2 associate-iam-instance-profile \
-        --instance-id ${instance} \
-        --iam-instance-profile Name=${MAILSERVER_INSTANCE_PROFILE}
-    echo "[INFO] created instance ${instance} @ ${hostname}" >/dev/stderr
+    if [[ -n "${instance}" ]]; then
+        echo "[INFO] created instance ${instance} ... waiting for it to start" >/dev/stderr
+        while [[ $(util:instance-state "${instance}") != 'running' ]]; do sleep 5; done
+        echo "[INFO] instance ${instance} is running" >/dev/stderr
+        local hostname=$(util:instance-public-hostname "${instance}")
+        echo "[INFO] setting ${instance} security profile" >/dev/stderr
+        aws ec2 associate-iam-instance-profile \
+            --instance-id ${instance} \
+            --iam-instance-profile Name=${MAILSERVER_INSTANCE_PROFILE}
+        echo "[INFO] created instance ${instance} @ ${hostname}" >/dev/stderr
+        echo -n "[INFO] waiting for instance bootstrap to complete " >/dev/stderr
+        while [[ -z $(instance:read-tag ${instance} BootstrapStatus) ]]; do
+            sleep 5
+            echo -n '.'
+        done
+        echo
+        echo "[INFO] instance bootstrap is complete" >/dev/stderr
+        echo "[INFO] remember to change the password for user 'postmaster'" >/dev/stderr
+    else
+        echo "[ERROR] failed to create instance" >/dev/stderr
+        return 1
+    fi
 }
 
 

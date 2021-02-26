@@ -1,0 +1,291 @@
+#!/bin/bash
+
+#####
+#
+# FIXME -- list prerequisites and assumptions
+#
+# http://169.254.169.254/latest/meta-data/instance-id
+# http://169.254.169.254/latest/meta-data/placement/availability-zone
+# http://169.254.169.254/latest/meta-data/public-hostname
+# http://169.254.169.254/latest/meta-data/public-ipv4
+#
+#####
+
+export MAILSERVER_KEY_PAIR=mailserver.hanlonsoftware.com
+export MAILSERVER_INSTANCE_PROFILE=Mailserver@jim.hanlonsoftware.com
+export MAILSERVER_INSTANCE_TYPE=t2.micro
+export MAILSERVER_UBUNTU_RELEASE=focal
+
+function instance:set-cname-records() {
+    local instanceId=${1:?Need instance ID}
+    shift
+    local ec2PublicHostname=${1:?Need public hostname}
+    shift
+    for cname in "${@}"; do
+        local domainName=$(echo "${cname}" | sed -E 's/^[^\.]*\.//')
+        local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)
+        local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
+{
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "${cname}",
+        "Type": "CNAME",
+        "TTL": 300,
+        "ResourceRecords": [
+          {
+            "Value": "${ec2PublicHostname}"
+          }
+        ]
+      }
+    }
+  ]
+}
+END_OF_JSON
+        )
+    done
+}
+function mailserver:authorize-my-ip-for-ssh-ingress() {
+    local myIp=$(curl -s http://ipaddr.pub/ip)
+    local securityGroup=$(mailserver:get-security-group)
+    aws ec2 authorize-security-group-ingress \
+        --group-id "${securityGroup}" \
+        --protocol tcp \
+        --port 22 \
+        --cidr "${myIp}/32" \
+        --output text    
+}
+
+
+mailserver:create-instance() {
+    local ami=$(ubuntu:find-latest-ami)
+    local sg=$(mailserver:get-security-group)
+    local subnet=$(util:find-random-subnet)
+    # local user_data_file=$(mktemp)
+    local response=$(aws ec2 run-instances \
+        --image-id "${ami}" \
+        --count 1 \
+        --instance-type "${MAILSERVER_INSTANCE_TYPE}" \
+        --key-name "${MAILSERVER_KEY_PAIR}" \
+        --security-group-ids "${sg}" \
+        --subnet-id "${subnet}" \
+        --user-data file:///dev/stdin <<EOF
+#!/bin/bash
+
+set -x -v
+
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get upgrade -y
+apt-get install -y \
+    apt-transport-https \
+    apt-utils
+apt-get install -y \
+    awscli \
+    binutils \
+    ca-certificates \
+    cron \
+    curl \
+    git \
+    gnupg-agent \
+    jq \
+    nfs-common \
+    python3 \
+    python3-pip \
+    software-properties-common
+(
+    git clone https://github.com/aws/efs-utils
+    (
+        cd efs-utils;
+        ./build-deb.sh
+        apt-get -y install ./build/amazon-efs-utils*deb
+    )
+    rm -rf efs-utils
+)
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+    APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=DontWarn apt-key add -
+(echo -n "deb [arch=amd64] https://download.docker.com/linux/ubuntu "; lsb_release -cs | tr -c -d '[:alpha:]'; echo ' stable') > /etc/apt/sources.list.d/docker.sources.list
+apt-get update
+apt-get install -y \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io
+pip3 install docker-compose
+mkdir -p /var/lib/mailu
+git clone https://github.com/jim-hanlon/m-s /var/lib/mailu
+source  /var/lib/mailu/server-functions
+mailserver:initialize
+(crontab -l 2>/dev/null; echo "@reboot /bin/bash -c 'source  /var/lib/mailu/server-functions; mailserver:initialize'") | crontab -
+EOF
+)
+    local instance=$(echo "$response" | jq '.Instances[0].InstanceId' | sed -E 's/(^"|"$)//g')
+    echo "[INFO] created instance ${instance} ... waiting for it to start" >/dev/stderr
+    while [[ $(util:instance-state "${instance}") != 'running' ]]; do sleep 5; done
+    echo "[INFO] instance ${instance} is running" >/dev/stderr
+    local hostname=$(util:instance-public-hostname "${instance}")
+    echo "[INFO] setting ${instance} security profile" >/dev/stderr
+    aws ec2 associate-iam-instance-profile \
+        --instance-id ${instance} \
+        --iam-instance-profile Name=${MAILSERVER_INSTANCE_PROFILE}
+    echo "[INFO] created instance ${instance} @ ${hostname}" >/dev/stderr
+}
+
+
+function mailserver:get-security-group() {
+    aws ec2 describe-security-groups \
+        --query 'SecurityGroups[*][Tags[?Key==`Name` && Value==`mailserver`].Value|[0], GroupId]' \
+        --output text | \
+    grep -E '^mailserver\s' | \
+    awk '{ print $2 }'
+}
+
+
+function ubuntu:find-latest-ami() {
+    local ubuntuOwnerId=099720109477
+    local ubuntuRelease=${1:-${MAILSERVER_UBUNTU_RELEASE}}
+    local ubuntuImagePrefix=${2:-ubuntu-minimal/images/hvm-ssd/}
+    aws ec2 describe-images \
+        --owners "${ubuntuOwnerId}" \
+        --query 'Images[*].[CreationDate,Name,ImageId]' \
+        --filters Name=root-device-type,Values=ebs \
+                  Name=image-type,Values=machine \
+                  Name=is-public,Values=true \
+                  Name=hypervisor,Values=xen \
+                  Name=architecture,Values=x86_64 \
+                  Name=virtualization-type,Values=hvm \
+        --output text | \
+    grep "${ubuntuImagePrefix}"'.*'"${ubuntuRelease}"'.*' | \
+    sort -r | \
+    head -1 |
+    awk '{ print $3 }'
+}
+
+function util:find-random-subnet(){
+    aws ec2 describe-subnets \
+        --query 'Subnets[][SubnetId]' \
+        --output text | \
+    shuf --random-source /dev/random -n 1
+}
+
+function util:instance-by-cname() {
+    local cname=${1:?Need CNAME}
+    aws ec2 describe-instances \
+        --query 'Reservations[*].Instances[*][].[InstanceId, Tags[?starts_with(Key, `CNAME`)].Value|join(`:`,@)]' --output text |
+    grep "${cname}" | awk '{print $1}'
+}
+
+
+function util:instance-cnames() {
+    local instanceId=${1:?Need Instance ID}
+    util:instance-data "${instanceId}" | awk '{$1="";$2="";$3="";$4="";print $0}' | sed -E 's/(^[ ]+|[ ]+$)//g' | tr '[:space:]' '\n'
+}
+
+
+function util:instance-data() {
+    local instanceId=${1:-""}
+    local filters=$([[ -n "${instanceId}" ]] && echo "--filters Name=instance-id,Values=${instanceId}")
+    aws ec2 describe-instances \
+        ${filters} \
+        --query 'Reservations[*].Instances[*].[InstanceId, State.Name, PublicDnsName, PublicIpAddress, Tags[?Key==`CNAMES`].Value|[0]][]' --output text
+}
+
+
+function util:instance-data-by-cname() {
+    local cname=${1:?Need CNAME}
+    util:instance-data | grep "${cname}"
+}
+
+
+function util:instance-data-by-state() {
+    local state=${1:?Need state}
+    util:instance-data | awk '$2 == "'${state}'" { print $0 }'
+}
+
+
+function util:instance-ids() {
+    util:instance-data | awk '{ printf("%s\n", $1) }'
+}
+
+
+function util:instance-public-hostname() {
+    local instanceId=${1:?Need instance-id}
+    util:instance-data "${instanceId}" | awk '{ print ($3 == "None" ? "" : $3); }'
+}
+
+
+function util:instance-public-hostnames() {
+    util:instance-data | awk '{ print $1, ($3 == "None" ? "" : $3) }'
+}
+
+
+function util:instance-states() {
+    util:instance-data | awk '{ print $1, $2; }'
+}
+
+
+function util:instance-state() {
+    local instanceId=${1:?Need instance ID}
+    local filters="--filters Name=instance-id,Values=${instanceId}"
+    aws ec2 describe-instances  --query 'Reservations[].Instances[].State.Name' ${filters} --output text
+}
+
+
+function util:instance-state-by-cname() {
+    local cname=${1:?Need CNAME}
+    util:instance-data-by-cname "${cname}" | awk '{ printf("%s\n", $2) }'
+}
+
+
+function util:instance-tags() {
+    local instanceId=${1:?Need Instance ID}
+    aws ec2 describe-instances  --query 'Reservations[].Instances[?InstanceId==`'"${instanceId}"'`][].Tags[]' --output text
+}
+
+
+function util:start-instance() {
+    local instanceId=${1:?Need Instance ID}
+    local response=$(aws ec2 start-instances --instance-ids "${instanceId}")
+    if [[ ${?} -ne 0 ]]; then
+        echo "[ERROR] Unable to restart instance ${instanceId}\n${response}" > /dev/stderr && exit 1
+    fi
+    response=$(aws ec2 wait instance-running --instance-ids "${instanceId}" )
+    if [[ ${?} -ne 0 ]]; then
+        echo "[ERROR] Failure waiting for instance ${instanceId} to start\n${response}" > /dev/stderr && exit 1
+    fi
+}
+
+
+function util:start-instance-by-cname() {
+    local cname=${1:?Need CNAME}
+    util:start-instance $(util:instance-by-cname "${cname}")
+}
+
+
+function util:stop-instance() {
+    local instanceId=${1:?Need Instance ID}
+    
+    local response=$(aws ec2 stop-instances --instance-ids "${instanceId}")
+    if [[ ${?} -ne 0 ]]; then
+        echo "[ERROR] Unable to stop instance ${instanceId}\n${response}" > /dev/stderr && exit 1
+    fi
+    response=$(aws ec2 wait instance-stopped --instance-ids "${instanceId}" )
+    if [[ ${?} -ne 0 ]]; then
+        echo "[ERROR] Failure waiting for instance ${instanceId} to stop\n${response}" > /dev/stderr && exit 1
+    fi
+}
+
+
+function util:stop-instance-by-cname() {
+    local cname=${1:?Need CNAME}
+    util:stop-instance $(util:instance-by-cname "${cname}")
+}
+
+
+function util:terminate-instance() {
+    local instanceId=${1:?Need Instance ID}
+    aws ec2 terminate-instances --instance-ids "${instanceId}" --output text
+}
+
+

@@ -13,7 +13,7 @@
 
 export MAILSERVER_KEY_PAIR=mailserver.hanlonsoftware.com
 export MAILSERVER_INSTANCE_PROFILE=Mailserver@jim.hanlonsoftware.com
-export MAILSERVER_INSTANCE_TYPE=t3.small
+export MAILSERVER_INSTANCE_TYPE=t3.medium
 export MAILSERVER_UBUNTU_RELEASE=focal
 
 function instance:set-cname-records() {
@@ -91,10 +91,12 @@ apt-get install -y \
     git \
     gnupg-agent \
     jq \
+    net-tools \
     nfs-common \
     python3 \
     python3-pip \
-    software-properties-common
+    software-properties-common \
+    vim
 (
     git clone https://github.com/aws/efs-utils
     (
@@ -112,6 +114,8 @@ apt-get install -y \
     docker-ce \
     docker-ce-cli \
     containerd.io
+groupadd docker
+usermod -aG docker ubuntu
 pip3 install docker-compose
 mkdir -p /var/lib/mailu
 git clone https://github.com/jim-hanlon/m-s /var/lib/mailu

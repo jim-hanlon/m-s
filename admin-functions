@@ -193,9 +193,11 @@ function ubuntu:find-latest-ami() {
 }
 
 function util:find-random-subnet(){
-    aws ec2 describe-subnets \
-        --query 'Subnets[][SubnetId]' \
-        --output text | \
+    aws ec2 describe-instance-type-offerings \
+        --filters Name=instance-type,Values=${MAILSERVER_INSTANCE_TYPE} \
+        --location-type availability-zone | \
+    jq '.InstanceTypeOfferings[].Location' | \
+    sed -E 's/(^"|"$)//g' | \
     shuf --random-source /dev/random -n 1
 }
 

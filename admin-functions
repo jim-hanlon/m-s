@@ -13,6 +13,8 @@
 #
 #####
 
+export MAILSERVER_HOME=${MAILSERVER_HOME:-/var/lib/mailu}
+export MAILSERVER_CONFIGURATION_FILE=${MAILSERVER_CONFIGURATION_FILE:-${MAILSERVER_HOME}/mailu.env}
 export MAILSERVER_KEY_PAIR=mailserver.hanlonsoftware.com
 export MAILSERVER_INSTANCE_PROFILE=Mailserver@jim.hanlonsoftware.com
 export MAILSERVER_INSTANCE_TYPE=t3.medium
@@ -66,12 +68,13 @@ function mailserver:authorize-my-ip-for-ssh-ingress() {
         --protocol tcp \
         --port 22 \
         --cidr "${myIp}/32" \
-        --output text    
+        --output text
 }
 
 
 mailserver:create-instance() {
     # local postmasterPassword=${1:?Need postmaster password)
+    echo "[INFO] looking for latest Ubuntu AMI" >/dev/stderr
     local ami=$(ubuntu:find-latest-ami)
     local sg=$(mailserver:get-security-group)
     local subnet=$(util:find-random-subnet)
@@ -131,9 +134,9 @@ apt-get install -y \
 groupadd docker
 usermod -aG docker ubuntu
 pip3 install docker-compose
-mkdir -p ${MAILSERVER_HOME}
-git clone https://github.com/jim-hanlon/m-s ${MAILSERVER_HOME}
-source  ${MAILSERVER_HOME}/server-functions
+mkdir -p \${MAILSERVER_HOME}
+git clone https://github.com/jim-hanlon/m-s \${MAILSERVER_HOME}
+source  \${MAILSERVER_HOME}/server-functions
 mailserver:install
 EOF
 )
@@ -192,11 +195,20 @@ function ubuntu:find-latest-ami() {
     awk '{ print $3 }'
 }
 
-function util:find-random-subnet(){
+function util:find-availability-zones() {
     aws ec2 describe-instance-type-offerings \
         --filters Name=instance-type,Values=${MAILSERVER_INSTANCE_TYPE} \
         --location-type availability-zone | \
     jq '.InstanceTypeOfferings[].Location' | \
+    sed -E 's/(^"|"$)//g'
+}
+
+function util:find-random-subnet() {
+    local az=$(util:find-availability-zones | \
+               shuf --random-source /dev/random -n 1)
+    aws ec2 describe-subnets \
+        --filters "Name=availability-zone,Values=${az}" | \
+    jq '.Subnets[].SubnetId' | \
     sed -E 's/(^"|"$)//g' | \
     shuf --random-source /dev/random -n 1
 }

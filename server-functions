@@ -107,7 +107,7 @@ function mailserver:install() {
         mailserver:initialize
         mailserver:start
         for hostname in $(grep HOSTNAMES ${MAILSERVER_CONFIGURATION_FILE} | cut -d= -f2 | cut -d, -f1); do
-            docker-compose -p mailu exec admin flask mailu admin postmaster ${hostname} postmaster
+            docker-compose -p mailu exec admin flask mailu admin  --mode update postmaster ${hostname} postmaster
         done
         (crontab -l 2>/dev/null; echo "@reboot /bin/bash -c 'source ${MAILSERVER_HOME}/server-functions && mailserver:initialize && mailserver:start'") | crontab -
     fi

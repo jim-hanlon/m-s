@@ -59,10 +59,39 @@ function instance:region() {
 }
 
 
+function instance:set-a-records() {
+    local ec2PublicIpv4=$(instance:public-ipv4)
+    for name in "${@}"; do
+        local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
+        local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)
+        local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
+{
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "${name}",
+        "Type": "A",
+        "TTL": 300,
+        "ResourceRecords": [
+          {
+            "Value": "${ec2PublicIpv4}"
+          }
+        ]
+      }
+    }
+  ]
+}
+END_OF_JSON
+        )
+    done
+}
+
+
 function instance:set-cname-records() {
     local ec2PublicHostname=$(instance:public-hostname)
-    for cname in "${@}"; do
-        local domainName=$(echo "${cname}" | sed -E 's/^[^\.]*\.//')
+    for name in "${@}"; do
+        local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
         local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)
         local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
             {
@@ -70,7 +99,7 @@ function instance:set-cname-records() {
                 {
                   "Action": "UPSERT",
                   "ResourceRecordSet": {
-                    "Name": "${cname}",
+                    "Name": "${name}",
                     "Type": "CNAME",
                     "TTL": 300,
                     "ResourceRecords": [
@@ -98,7 +127,7 @@ function mailserver:idle() {
 function mailserver:initialize() {
     mailserver:mount-mailserver-data
     mailserver:install_mailu_configuration
-    mailserver:set-cnames
+    mailserver:set-a-records
 }
 
 
@@ -141,6 +170,11 @@ function mailserver:mount-mailserver-data() {
     mkdir -p "${MAILSERVER_DATA_MOUNTPOINT}"
     chown nobody:nogroup "${MAILSERVER_DATA_MOUNTPOINT}"
     mount "${MAILSERVER_DATA_MOUNTPOINT}"
+}
+
+
+function mailserver:set-a-records() {
+    instance:set-a-records $(grep HOSTNAMES "${MAILSERVER_CONFIGURATION_FILE}" | cut -d= -f2 | cut -d, --output-delimiter ' ' -f1-)
 }
 
 

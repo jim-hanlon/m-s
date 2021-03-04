@@ -1,5 +1,13 @@
 #!/bin/bash
 
+function af() {
+    (
+        source "${HOME}/iCloudDocs/Programming/Mailserver/Mailu/aws/admin-functions"
+        "$@"
+    )
+}
+
+
 #####
 #
 # FIXME -- list prerequisites and assumptions
@@ -10,6 +18,14 @@
 # http://169.254.169.254/latest/meta-data/local-hostname
 # http://169.254.169.254/latest/meta-data/public-hostname
 # http://169.254.169.254/latest/meta-data/public-ipv4
+#
+# aws secretsmanager create-secret \
+#       --name mailserver.admin-credentials \
+#       --secret-string '{"username":"postmaster","password":"postmaster"}' \
+#       --tags '[{"Key":"Name","Value":"mailserver:admin-credentials"},{"Key":"Role","Value":"mailserver"}]'
+#       --description 'Mailserver administrator account name and password'
+# aws secretsmanager get-secret-value --secret-id  mailserver.admin-credentials  | jq '.SecretString'  | sed -E 's/(^"|"$)//g' | sed 's/\\"/"/g' | jq '.password' | tr -d '"'
+# aws secretsmanager list-secrets
 #
 #####
 
@@ -52,6 +68,38 @@ END_OF_JSON
 }
 
 
+function instance:set-a-records() {
+    local instanceId=${1:?Need instance ID}
+    shift
+    local ec2PublicIpAddress=${1:?Need public address}
+    shift
+    for name in "${@}"; do
+        local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
+        local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)
+        local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
+{
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "${name}",
+        "Type": "A",
+        "TTL": 300,
+        "ResourceRecords": [
+          {
+            "Value": "${ec2PublicIpAddress}"
+          }
+        ]
+      }
+    }
+  ]
+}
+END_OF_JSON
+        )
+    done
+}
+
+
 function instance:read-tag() {
     local instanceId=${1:?Need instance ID}
     local key=${2:?Need key}
@@ -61,7 +109,7 @@ function instance:read-tag() {
 
 
 function mailserver:authorize-my-ip-for-ssh-ingress() {
-    local myIp=$(curl -s http://ipaddr.pub/ip)
+    local myIp=$(dig +short myip.opendns.com @resolver1.opendns.com)
     local securityGroup=$(mailserver:get-security-group)
     aws ec2 authorize-security-group-ingress \
         --group-id "${securityGroup}" \
@@ -261,6 +309,11 @@ function util:instance-public-hostname() {
 
 function util:instance-public-hostnames() {
     util:instance-data | awk '{ print $1, ($3 == "None" ? "" : $3) }'
+}
+
+
+function util:instance-start() {
+    util:start-instance "${@}"
 }
 
 

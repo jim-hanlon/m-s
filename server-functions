@@ -69,13 +69,13 @@ function instance:region() {
 
 function instance:set-a-records() {
     local ec2PublicIpv4=$(instance:public-ipv4)
-    route-53:set-ipv4-a-record 300 "${ec2PublicIpv4}" "${@}"
+    route-53:set-ipv4-a-record "${ec2PublicIpv4}" 300 "${@}"
 }
 
 
 function instance:set-cname-records() {
     local ec2PublicHostname=$(instance:public-hostname)
-    route-53:set-ipv4-a-record 300 "${ec2PublicHostname}" "${@}"
+    route-53:set-ipv4-a-record "${ec2PublicHostname}" 300 "${@}"
 }
 
 

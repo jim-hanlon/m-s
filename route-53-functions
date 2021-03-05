@@ -1,0 +1,138 @@
+#!/bin/bash
+
+function route-53:delete-record {
+    for name in "${@}"; do
+        local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
+        local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)
+        local type=$(route-53:get-record-type "${name}")
+        if [[ -n "${type}" ]]; then
+            local ttl=$(route-53:get-record-ttl "${name}")
+            local value=$(route-53:get-record-value "${name}")
+            local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
+{
+    "Changes": [
+        {
+            "Action": "DELETE",
+            "ResourceRecordSet": {
+                "Name": "${name}.",
+                "Type": "${type}",
+                "TTL": ${ttl},
+                "ResourceRecords": [
+                    {
+                        "Value": "${value}"
+                    }
+                ]                
+            }
+        }
+    ]
+}
+END_OF_JSON
+            )
+        fi
+    done
+}
+
+
+function route-53:get-record-ttl() {
+    local name=${1:?Need Record Name}
+    local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
+    local id=$(route-53:get-zone-id "${domainName}")
+    aws route53 list-resource-record-sets --hosted-zone-id "${id}" --query "ResourceRecordSets[?Name == '${name}.']" --output text | \
+    grep "^${name}" | \
+    awk '{ print $2 }'
+}
+
+
+function route-53:get-record-type() {
+    local name=${1:?Need Record Name}
+    local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
+    local id=$(route-53:get-zone-id "${domainName}")
+    aws route53 list-resource-record-sets --hosted-zone-id "${id}" --query "ResourceRecordSets[?Name == '${name}.']" --output text | \
+    grep "^${name}" | \
+    awk '{ print $3 }'
+}
+
+
+function route-53:get-record-value() {
+    local name=${1:?Need Record Name}
+    local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
+    local id=$(route-53:get-zone-id "${domainName}")
+    aws route53 list-resource-record-sets --hosted-zone-id "${id}" --query "ResourceRecordSets[?Name == '${name}.']" --output text | \
+    grep "^RESOURCERECORDS" | \
+    awk '{ print $2 }'
+}
+
+
+function route-53:get-zone-id() {
+    local name=${1:?Need Zone Name}
+    aws route53 list-hosted-zones --query "HostedZones[?Name == '${name}.']" --output text | \
+    head -1 | \
+    awk '{print $2}' | \
+    cut -d/ -f3
+}
+
+function route-53:get-zone-name() {
+    local id=${1:?Need Zone ID}
+    aws route53 get-hosted-zone --id "${id}" | \
+    jq '.HostedZone.Name' | \
+    tr -d '"' | \
+    sed 's/\.$//'
+}
+
+
+function route-53:list-zones() {
+    aws route53 list-hosted-zones --output text | \
+    grep HOSTEDZONES | \
+    awk '{ print $4, $3 }' | \
+    sed 's|. /hostedzone/| |' | \
+    awk '{ print $2, $1 }'
+}
+
+
+function route-53:set-ipv4-a-record() {
+    # args: TTL ipv4 [recordname ...]
+    route-53:set-ipv4-a-or-cname-record 'A' "${@}"
+}
+
+
+function route-53:set-ipv4-a-or-cname-record() {
+    local type=${1:?Need record type}
+    shift
+    local address=${1:?Need  address}
+    shift
+    local ttl=${1:-300}
+    (echo "${ttl}" | grep -E -q '^\d+$') && shift
+    for name in "${@}"; do
+        local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
+        local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)
+        local t=$(route-53:get-record-type "${name}")
+        [[ -n "${t}" && "${t}" != "${type}" ]] && route-53:delete-record "${name}"
+        local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
+{
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "${name}",
+        "Type": "${type}",
+        "TTL": ${ttl},
+        "ResourceRecords": [
+          {
+            "Value": "${address}"
+          }
+        ]
+      }
+    }
+  ]
+}
+END_OF_JSON
+        )
+    done
+}
+
+
+function route-53:set-cname-record() {
+    # args: TTL cname [recordname ...]
+    route-53:set-ipv4-a-or-cname-record 'CNAME' "${@}"
+}
+

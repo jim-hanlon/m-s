@@ -7,6 +7,8 @@ export MAILSERVER_DATA_MOUNTPOINT=${MAILSERVER_DATA_MOUNTPOINT:-/var/mail}
 export MAILSERVER_DOCKER_COMPOSE_FILE=${MAILSERVER_DOCKER_COMPOSE_FILE:-${MAILSERVER_HOME}/docker-compose.yml}
 export MAILSERVER_TOOLS_URL_PREFIX=${MAILSERVER_TOOLS_URL_PREFIX:-https://raw.githubusercontent.com/jim-hanlon/m-s/main}
 
+source "${prgdir}/route-53-functions"
+
 
 function instance:create-tag() {
     local key=${1:?Need key}
@@ -61,60 +63,13 @@ function instance:region() {
 
 function instance:set-a-records() {
     local ec2PublicIpv4=$(instance:public-ipv4)
-    for name in "${@}"; do
-        local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
-        local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)
-        local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
-{
-  "Changes": [
-    {
-      "Action": "UPSERT",
-      "ResourceRecordSet": {
-        "Name": "${name}",
-        "Type": "A",
-        "TTL": 300,
-        "ResourceRecords": [
-          {
-            "Value": "${ec2PublicIpv4}"
-          }
-        ]
-      }
-    }
-  ]
-}
-END_OF_JSON
-        )
-    done
+    route-53:set-ipv4-a-record 300 "${ec2PublicIpv4}" "${@}"
 }
 
 
 function instance:set-cname-records() {
     local ec2PublicHostname=$(instance:public-hostname)
-    for name in "${@}"; do
-        local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
-        local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)
-        local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
-            {
-              "Changes": [
-                {
-                  "Action": "UPSERT",
-                  "ResourceRecordSet": {
-                    "Name": "${name}",
-                    "Type": "CNAME",
-                    "TTL": 300,
-                    "ResourceRecords": [
-                      {
-                        "Value": "${ec2PublicHostname}"
-                      }
-                    ]
-                  }
-                }
-              ]
-            }
-END_OF_JSON
-        )
-        logger "${0}: UPSERT ${cname} to ${ec2PublicHostname}: ${result}"
-    done
+    route-53:set-ipv4-a-record 300 "${ec2PublicHostname}" "${@}"
 }
 
 
@@ -193,4 +148,5 @@ function mailserver:stop() {
     cd "${MAILSERVER_HOME}"
     docker-compose -p mailu down --remove-orphans
 }
+
 

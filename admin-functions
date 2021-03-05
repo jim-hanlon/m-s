@@ -36,68 +36,13 @@ export MAILSERVER_INSTANCE_PROFILE=Mailserver@jim.hanlonsoftware.com
 export MAILSERVER_INSTANCE_TYPE=t3.medium
 export MAILSERVER_UBUNTU_RELEASE=focal
 
-function instance:set-cname-records() {
-    local instanceId=${1:?Need instance ID}
-    shift
-    local ec2PublicHostname=${1:?Need public hostname}
-    shift
-    for cname in "${@}"; do
-        local domainName=$(echo "${cname}" | sed -E 's/^[^\.]*\.//')
-        local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)
-        local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
-{
-  "Changes": [
-    {
-      "Action": "UPSERT",
-      "ResourceRecordSet": {
-        "Name": "${cname}",
-        "Type": "CNAME",
-        "TTL": 300,
-        "ResourceRecords": [
-          {
-            "Value": "${ec2PublicHostname}"
-          }
-        ]
-      }
-    }
-  ]
-}
-END_OF_JSON
-        )
-    done
-}
+prg=${BASH_SOURCE[0]}
+[[ ( -n "${prg}" ) && ( -f "${prg}" ) ]] || (echo "[FATAL] cannot locate: '$0'" 1>&2)
+task=$(basename -- "${prg}")
+prgdir=$(dirname -- "${prg}")
+prgdir=$(cd "${prgdir}" > /dev/null && pwd)
 
-
-function instance:set-a-records() {
-    local instanceId=${1:?Need instance ID}
-    shift
-    local ec2PublicIpAddress=${1:?Need public address}
-    shift
-    for name in "${@}"; do
-        local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
-        local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)
-        local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
-{
-  "Changes": [
-    {
-      "Action": "UPSERT",
-      "ResourceRecordSet": {
-        "Name": "${name}",
-        "Type": "A",
-        "TTL": 300,
-        "ResourceRecords": [
-          {
-            "Value": "${ec2PublicIpAddress}"
-          }
-        ]
-      }
-    }
-  ]
-}
-END_OF_JSON
-        )
-    done
-}
+source "${prgdir}/route-53-functions"
 
 
 function instance:read-tag() {
@@ -105,6 +50,16 @@ function instance:read-tag() {
     local key=${2:?Need key}
     # local region=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq '.region' | tr -d '"')
     aws ec2 describe-tags --filters Name=resource-id,Values=${instanceId} Name=key,Values=$key | jq '.Tags[].Value'
+}
+
+
+function instance:set-a-records() {
+    route-53:set-ipv4-a-record 300 "${@}"
+}
+
+
+function instance:set-cname-records() {
+    route-53:set-cname-record 300 "${@}"
 }
 
 

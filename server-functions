@@ -7,6 +7,12 @@ export MAILSERVER_DATA_MOUNTPOINT=${MAILSERVER_DATA_MOUNTPOINT:-/var/mail}
 export MAILSERVER_DOCKER_COMPOSE_FILE=${MAILSERVER_DOCKER_COMPOSE_FILE:-${MAILSERVER_HOME}/docker-compose.yml}
 export MAILSERVER_TOOLS_URL_PREFIX=${MAILSERVER_TOOLS_URL_PREFIX:-https://raw.githubusercontent.com/jim-hanlon/m-s/main}
 
+prg=${BASH_SOURCE[0]}
+[[ ( -n "${prg}" ) && ( -f "${prg}" ) ]] || (echo "[FATAL] cannot locate: '$0'" 1>&2)
+task=$(basename -- "${prg}")
+prgdir=$(dirname -- "${prg}")
+prgdir=$(cd "${prgdir}" > /dev/null && pwd)
+
 source "${prgdir}/route-53-functions"
 
 

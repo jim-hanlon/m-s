@@ -79,8 +79,11 @@ mailserver:create-instance() {
     # local postmasterPassword=${1:?Need postmaster password)
     echo "[INFO] looking for latest Ubuntu AMI" >/dev/stderr
     local ami=$(ubuntu:find-latest-ami)
+    echo "[INFO] using AMI ${ami}" >/dev/stderr
     local sg=$(mailserver:get-security-group)
+    echo "[INFO] using security group ${sg}" >/dev/stderr
     local subnet=$(util:find-random-subnet)
+    echo "[INFO] using subnet ${subnet}" >/dev/stderr
     local response=$(aws ec2 run-instances \
         --image-id "${ami}" \
         --count 1 \
@@ -116,6 +119,7 @@ apt-get install -y \
     python3 \
     python3-pip \
     software-properties-common \
+    sqlite3 \
     vim
 (
     git clone https://github.com/aws/efs-utils
@@ -145,6 +149,7 @@ EOF
 )
     local instance=$(echo "$response" | jq '.Instances[0].InstanceId' | sed -E 's/(^"|"$)//g')
     if [[ -n "${instance}" ]]; then
+set -x -v
         echo "[INFO] created instance ${instance} ... waiting for it to start" >/dev/stderr
         while [[ $(util:instance-state "${instance}") != 'running' ]]; do sleep 5; done
         echo "[INFO] instance ${instance} is running" >/dev/stderr
@@ -155,15 +160,23 @@ EOF
             --iam-instance-profile Name=${MAILSERVER_INSTANCE_PROFILE}
         echo "[INFO] created instance ${instance} @ ${hostname}" >/dev/stderr
         echo -n "[INFO] waiting for instance bootstrap to complete " >/dev/stderr
-        while [[ -z $(instance:read-tag ${instance} BootstrapStatus) ]]; do
+        local lastBootstrapStatus=$(instance:read-tag ${instance} BootstrapStatus)
+        while [[ "${lastBootstrapStatus}" != "complete" ]]; do
+            local s=$(instance:read-tag ${instance} BootstrapStatus)
+            if [[ "${s}" != "${lastBootstrapStatus}" ]]; then
+                lastBootstrapStatus="${s}"
+                echo
+                echo -n "[INFO] instance ${instance} is ${lastBootstrapStatus}" >/dev/stderr
+            fi
             sleep 5
             echo -n '.'
         done
-        echo
+        echo >/dev/stderr
         echo "[INFO] instance bootstrap is complete" >/dev/stderr
         echo "[INFO] remember to change the password for user 'postmaster'" >/dev/stderr
     else
         echo "[ERROR] failed to create instance" >/dev/stderr
+        echo "[ERROR] ${response}" >/dev/stderr
         return 1
     fi
 }

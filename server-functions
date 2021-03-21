@@ -94,14 +94,26 @@ function mailserver:initialize() {
 
 function mailserver:install() {
     if [[ -z $(instance:read-tag BootstrapStatus) ]]; then
+        instance:create-tag BootstrapStatus initializing-mailserver
         mailserver:initialize
         mailserver:start
         for hostname in $(grep HOSTNAMES ${MAILSERVER_CONFIGURATION_FILE} | cut -d= -f2 | cut -d, -f1); do
+            hostname=$(echo "${hostname} | sed -E 's/^mail\.//')
             docker-compose -p mailu exec admin flask mailu admin  --mode update postmaster ${hostname} postmaster
         done
-        (crontab -l 2>/dev/null; echo "@reboot /bin/bash -c 'source ${MAILSERVER_HOME}/server-functions && mailserver:initialize && mailserver:start'") | crontab -
+        (crontab -l 2>/dev/null; echo "@reboot /bin/bash -c 'source ${MAILSERVER_HOME}/server-functions && instance:create-tag BootstrapStatus complete && mailserver:initialize && mailserver:start'") | crontab -
     fi
-    instance:create-tag BootstrapStatus complete
+    local upgradable=$(sudo apt list --upgradable 2>/dev/null | tail -n +2 | cut -d/ -f1)
+    if [[ -n "${upgradable}" ]]; then
+        instance:create-tag BootstrapStatus "upgrading ${upgradable}"
+        apt-get install -y ${upgradable}
+    fi
+    if [ -f /var/run/reboot-required ]; then
+        instance:create-tag BootstrapStatus rebooting
+        reboot
+    else
+        instance:create-tag BootstrapStatus complete
+    fi
 }
 
 
@@ -121,6 +133,11 @@ function mailserver:install_mailu_configuration() {
 }
 
 
+function mailserver:mail-server-names() {
+    echo $(for d in $(grep HOSTNAMES "${MAILSERVER_CONFIGURATION_FILE}" | cut -d= -f2 | cut -d, --output-delimiter ' ' -f1-); do echo "mail.${d}"; done)
+}
+
+
 function mailserver:mount-mailserver-data() {
     local availabilityZone=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq '.availabilityZone' | tr -d '"')
     local region=$(instance:region)
@@ -135,12 +152,12 @@ function mailserver:mount-mailserver-data() {
 
 
 function mailserver:set-a-records() {
-    instance:set-a-records $(grep HOSTNAMES "${MAILSERVER_CONFIGURATION_FILE}" | cut -d= -f2 | cut -d, --output-delimiter ' ' -f1-)
+    instance:set-a-records $(mailserver:mail-server-names)
 }
 
 
 function mailserver:set-cnames() {
-    instance:set-cname-records $(grep HOSTNAMES "${MAILSERVER_CONFIGURATION_FILE}" | cut -d= -f2 | cut -d, --output-delimiter ' ' -f1-)
+    instance:set-cname-records  $(mailserver:mail-server-names)
 }
 
 

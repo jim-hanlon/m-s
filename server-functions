@@ -93,9 +93,10 @@ function mailserver:initialize() {
 
 
 function mailserver:install() {
-        while [[ "${lastBootstrapStatus}" != "complete" ]]; do
-
-    if [[ $(instance:read-tag BootstrapStatus) != "complete]]; then
+    set -x -v
+    bootstrapStatus=$(instance:read-tag BootstrapStatus)
+    if [[ "${bootstrapStatus}" != "complete" ]] && 
+        [[ "${bootstrapStatus}" != "rebooting" ]]; then
         instance:create-tag BootstrapStatus 'initializing-mailserver'
         mailserver:initialize
         mailserver:start
@@ -103,7 +104,7 @@ function mailserver:install() {
             hostname=$(echo "${hostname}" | sed -E 's/^mail\.//')
             docker-compose -p mailu exec admin flask mailu admin  --mode update postmaster ${hostname} postmaster
         done
-        (crontab -l 2>/dev/null | grep -v @reboot; echo "@reboot /bin/bash -c 'source ${MAILSERVER_HOME}/server-functions && instance:create-tag BootstrapStatus complete && mailserver:initialize && mailserver:start'") | crontab -
+        ((crontab -l 2>/dev/null | grep -v '@reboot'); echo "@reboot /bin/bash -c 'source ${MAILSERVER_HOME}/server-functions && instance:create-tag BootstrapStatus complete && mailserver:initialize && mailserver:start'") | crontab -
     fi
     local upgradable=$(sudo apt list --upgradable 2>/dev/null | tail -n +2 | cut -d/ -f1)
     if [[ -n "${upgradable}" ]]; then

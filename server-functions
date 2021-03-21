@@ -93,11 +93,10 @@ function mailserver:initialize() {
 
 
 function mailserver:install() {
-    set -x -v
     bootstrapStatus=$(instance:read-tag BootstrapStatus)
     if [[ "${bootstrapStatus}" != "complete" ]] && 
         [[ "${bootstrapStatus}" != "rebooting" ]]; then
-        instance:create-tag BootstrapStatus 'initializing-mailserver'
+        instance:create-tag BootstrapStatus 'initializing mailserver'
         mailserver:initialize
         mailserver:start
         for hostname in $(grep HOSTNAMES ${MAILSERVER_CONFIGURATION_FILE} | cut -d= -f2 | cut -d, -f1); do

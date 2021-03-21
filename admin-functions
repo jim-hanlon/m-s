@@ -95,11 +95,18 @@ mailserver:create-instance() {
         --user-data file:///dev/stdin <<EOF
 #!/bin/bash
 
-set -x -v
-
 export DEBIAN_FRONTEND=noninteractive
 export MAILSERVER_HOME=/var/lib/mailu
 
+function create-aws-instance-tag() {
+    local key=${1:?Need key}
+    local value=${2?Need value}
+    local instanceId=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+    local region=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | cut -d\" -f4)
+    aws ec2 create-tags --region "${region}" --resources "${instanceId}" --tags Key="${key}",Value="${value}"
+}
+
+create-aws-instance-tag BootstrapStatus 'installing required packages'
 apt-get update
 apt-get upgrade -y
 apt-get install -y \
@@ -161,15 +168,17 @@ set -x -v
         echo "[INFO] created instance ${instance} @ ${hostname}" >/dev/stderr
         echo -n "[INFO] waiting for instance bootstrap to complete " >/dev/stderr
         local lastBootstrapStatus=$(instance:read-tag ${instance} BootstrapStatus)
-        while [[ "${lastBootstrapStatus}" != "complete" ]]; do
+        while [[ "${lastBootstrapStatus}" != 'complete' ]]; do
             local s=$(instance:read-tag ${instance} BootstrapStatus)
             if [[ "${s}" != "${lastBootstrapStatus}" ]]; then
-                lastBootstrapStatus="${s}"
                 echo
-                echo -n "[INFO] instance ${instance} is ${lastBootstrapStatus}" >/dev/stderr
+                echo -n "[INFO] instance ${instance} is ${s}" >/dev/stderr
             fi
-            sleep 5
-            echo -n '.'
+            lastBootstrapStatus="${s}"
+            if [[ "${lastBootstrapStatus}" != 'complete' ]]; then
+                sleep 5
+                echo -n '.'
+            fi
         done
         echo >/dev/stderr
         echo "[INFO] instance bootstrap is complete" >/dev/stderr
@@ -348,9 +357,12 @@ function util:stop-instance-by-cname() {
 }
 
 
-function util:terminate-instance() {
+function util:terminate-instances() {
     local instanceId=${1:?Need Instance ID}
-    aws ec2 terminate-instances --instance-ids "${instanceId}" --output text
+    aws ec2 terminate-instances --instance-ids "${@}" --output text
 }
 
+function util:terminate-running-instances() {
+    util:terminate-instance  $(util:instance-data | grep running | awk '{print $1}')
+}
 

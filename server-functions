@@ -93,22 +93,24 @@ function mailserver:initialize() {
 
 
 function mailserver:install() {
-    if [[ -z $(instance:read-tag BootstrapStatus) ]]; then
-        instance:create-tag BootstrapStatus initializing-mailserver
+        while [[ "${lastBootstrapStatus}" != "complete" ]]; do
+
+    if [[ $(instance:read-tag BootstrapStatus) != "complete]]; then
+        instance:create-tag BootstrapStatus 'initializing-mailserver'
         mailserver:initialize
         mailserver:start
         for hostname in $(grep HOSTNAMES ${MAILSERVER_CONFIGURATION_FILE} | cut -d= -f2 | cut -d, -f1); do
-            hostname=$(echo "${hostname} | sed -E 's/^mail\.//')
+            hostname=$(echo "${hostname}" | sed -E 's/^mail\.//')
             docker-compose -p mailu exec admin flask mailu admin  --mode update postmaster ${hostname} postmaster
         done
-        (crontab -l 2>/dev/null; echo "@reboot /bin/bash -c 'source ${MAILSERVER_HOME}/server-functions && instance:create-tag BootstrapStatus complete && mailserver:initialize && mailserver:start'") | crontab -
+        (crontab -l 2>/dev/null | grep -v @reboot; echo "@reboot /bin/bash -c 'source ${MAILSERVER_HOME}/server-functions && instance:create-tag BootstrapStatus complete && mailserver:initialize && mailserver:start'") | crontab -
     fi
     local upgradable=$(sudo apt list --upgradable 2>/dev/null | tail -n +2 | cut -d/ -f1)
     if [[ -n "${upgradable}" ]]; then
         instance:create-tag BootstrapStatus "upgrading ${upgradable}"
         apt-get install -y ${upgradable}
     fi
-    if [ -f /var/run/reboot-required ]; then
+    if [[ -f /var/run/reboot-required ]]; then
         instance:create-tag BootstrapStatus rebooting
         reboot
     else

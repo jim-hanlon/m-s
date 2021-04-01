@@ -98,8 +98,12 @@ function mailserver:initialize() {
     mailserver:mount-mailserver-data
     mailserver:install_mailu_configuration
     mailserver:set-a-records
+    mailserver:install-crontab-reboot-entry
 }
 
+function mailserver:install-crontab-reboot-entry() {
+        ((crontab -l 2>/dev/null | grep -v '@reboot'); echo "@reboot /bin/bash -c '(source ${MAILSERVER_HOME}/server-functions && instance:create-tag BootstrapStatus complete && mailserver:initialize && mailserver:start) >/var/log/reboot.log 2>&1'") | crontab -
+}
 
 function mailserver:install() {
     bootstrapStatus=$(instance:read-tag BootstrapStatus)
@@ -117,7 +121,6 @@ function mailserver:install() {
             hostname=$(echo "${hostname}" | sed -E 's/^mail\.//')
             docker-compose -p mailu exec admin flask mailu admin--mode "${adminMode" "${adminAccount}" "${hostname}" "${iadminPw}"
         done
-        ((crontab -l 2>/dev/null | grep -v '@reboot'); echo "@reboot /bin/bash -c 'source ${MAILSERVER_HOME}/server-functions && instance:create-tag BootstrapStatus complete && mailserver:initialize && mailserver:start'") | crontab -
     fi
     local upgradable=$(sudo apt list --upgradable 2>/dev/null | tail -n +2 | cut -d/ -f1)
     if [[ -n "${upgradable}" ]]; then

@@ -24,7 +24,7 @@ function af() {
 #       --secret-string '{"username":"postmaster","password":"postmaster"}' \
 #       --tags '[{"Key":"Name","Value":"mailserver:admin-credentials"},{"Key":"Role","Value":"mailserver"}]'
 #       --description 'Mailserver administrator account name and password'
-# aws secretsmanager get-secret-value --secret-id  mailserver.admin-credentials  | jq '.SecretString'  | sed -E 's/(^"|"$)//g' | sed 's/\\"/"/g' | jq '.password' | tr -d '"'
+# aws secretsmanager get-secret-value --secret-id  mailserver.admin-credentials  | jq '.SecretString'  | sed -E 's/(^"|"$)//g' | sed 's/\\"/"/g' | jq -r '.password'
 # aws secretsmanager list-secrets
 #
 #####
@@ -48,8 +48,8 @@ source "${prgdir}/route-53-functions"
 function instance:read-tag() {
     local instanceId=${1:?Need instance ID}
     local key=${2:?Need key}
-    # local region=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq '.region' | tr -d '"')
-    aws ec2 describe-tags --filters Name=resource-id,Values=${instanceId} Name=key,Values=$key | jq '.Tags[].Value'
+    # local region=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region')
+    aws ec2 describe-tags --filters Name=resource-id,Values=${instanceId} Name=key,Values=$key | jq -r '.Tags[].Value'
 }
 
 
@@ -99,11 +99,11 @@ export DEBIAN_FRONTEND=noninteractive
 export MAILSERVER_HOME=/var/lib/mailu
 
 function create-aws-instance-tag() {
-    local key=${1:?Need key}
-    local value=${2?Need value}
-    local instanceId=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
-    local region=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | cut -d\" -f4)
-    aws ec2 create-tags --region "${region}" --resources "${instanceId}" --tags Key="${key}",Value="${value}"
+    local key=\${1:?Need key}
+    local value=\${2?Need value}
+    local instanceId=\$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+    local region=\$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | cut -d\" -f4)
+    aws ec2 create-tags --region "\${region}" --resources "\${instanceId}" --tags Key="\${key}",Value="\${value}"
 }
 
 create-aws-instance-tag BootstrapStatus 'installing required packages'
@@ -156,7 +156,6 @@ EOF
 )
     local instance=$(echo "$response" | jq '.Instances[0].InstanceId' | sed -E 's/(^"|"$)//g')
     if [[ -n "${instance}" ]]; then
-set -x -v
         echo "[INFO] created instance ${instance} ... waiting for it to start" >/dev/stderr
         while [[ $(util:instance-state "${instance}") != 'running' ]]; do sleep 5; done
         echo "[INFO] instance ${instance} is running" >/dev/stderr

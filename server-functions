@@ -80,7 +80,7 @@ function instance:set-cname-records() {
 
 
 function mailserver:get-secret() {
-    local secretId=${1:?Need secret name'
+    local secretId=${1:?Need secret name}
     aws secretsmanager get-secret-value --secret-id "${secretId}" | \
         jq .SecretString | \
         sed -E 's/(^"|"$)//g' | \
@@ -101,9 +101,11 @@ function mailserver:initialize() {
     mailserver:install-crontab-reboot-entry
 }
 
+
 function mailserver:install-crontab-reboot-entry() {
-        ((crontab -l 2>/dev/null | grep -v '@reboot'); echo "@reboot /bin/bash -c '(source ${MAILSERVER_HOME}/server-functions && instance:create-tag BootstrapStatus complete && mailserver:initialize && mailserver:start) >/var/log/reboot.log 2>&1'") | crontab -
+    ((crontab -l 2>/dev/null | grep -v '@reboot'); echo "@reboot /bin/bash -c '(source ${MAILSERVER_HOME}/server-functions && instance:create-tag BootstrapStatus complete && mailserver:initialize && mailserver:start) >/var/log/reboot.log 2>&1'") | crontab -
 }
+
 
 function mailserver:install() {
     bootstrapStatus=$(instance:read-tag BootstrapStatus)
@@ -116,10 +118,10 @@ function mailserver:install() {
         local adminAccount=$(echo "${relayHostSecret}" | jq -r '.admin_account')
         local adminDomain=$(echo "${adminSecret}" | jq -r '.admin_domain')
         local adminMode=$(echo "${relayHostSecret}" | jq -r '.admin_mode')
-        local iadminPw=$(echo "${relayHostSecret}" | jq -r '.admin_pw')
+        local adminPw=$(echo "${relayHostSecret}" | jq -r '.admin_pw')
         for hostname in $(grep HOSTNAMES ${MAILSERVER_CONFIGURATION_FILE} | cut -d= -f2 | cut -d, -f1); do
             hostname=$(echo "${hostname}" | sed -E 's/^mail\.//')
-            docker-compose -p mailu exec admin flask mailu admin--mode "${adminMode" "${adminAccount}" "${hostname}" "${iadminPw}"
+            docker-compose -p mailu exec admin flask mailu admin --mode "${adminMode}" "${adminAccount}" "${hostname}" "${adminPw}"
         done
     fi
     local upgradable=$(sudo apt list --upgradable 2>/dev/null | tail -n +2 | cut -d/ -f1)

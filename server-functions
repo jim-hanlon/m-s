@@ -6,6 +6,7 @@ export MAILSERVER_CONFIGURATION_FILE_TEMPLATE=${MAILSERVER_CONFIGURATION_FILE_TE
 export MAILSERVER_DATA_FILESYSTEM=${MAILSERVER_DATA_FILESYSTEM:-mailserver-data}
 export MAILSERVER_DATA_MOUNTPOINT=${MAILSERVER_DATA_MOUNTPOINT:-/var/mail}
 export MAILSERVER_DOCKER_COMPOSE_FILE=${MAILSERVER_DOCKER_COMPOSE_FILE:-${MAILSERVER_HOME}/docker-compose.yml}
+export MAILSERVER_DOCKER_COMPOSE_FILE_TEMPLATE=${MAILSERVER_DOCKER_COMPOSE_FILE_TEMPLATE:-${MAILSERVER_DOCKER_COMPOSE_FILE}.tmpl8}
 export MAILSERVER_TOOLS_URL_PREFIX=${MAILSERVER_TOOLS_URL_PREFIX:-https://raw.githubusercontent.com/jim-hanlon/m-s/main}
 
 prg=${BASH_SOURCE[0]}
@@ -156,8 +157,7 @@ function mailserver:install_mailu_configuration() {
     local localIPv4=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
     version=$(( $(ls -1 "${MAILSERVER_DOCKER_COMPOSE_FILE}*" 2>/dev/null | grep -E '\.env(.[1-9][0-9]*)?$' | wc -l ) + 1 ))
     [[ -f "${MAILSERVER_DOCKER_COMPOSE_FILE}" ]] && cp "${MAILSERVER_DOCKER_COMPOSE_FILE}" "${MAILSERVER_DOCKER_COMPOSE_FILE}.${version}"
-    cat "${MAILSERVER_DOCKER_COMPOSE_FILE}.${version}" | sed 's/XXX\.XXX\.XXX\.XXX/'${localIPv4}'/g' > "${MAILSERVER_DOCKER_COMPOSE_FILE}"
-    
+    cat "${MAILSERVER_DOCKER_COMPOSE_FILE_TEMPLATE}" | sed 's/XXX\.XXX\.XXX\.XXX/'${localIPv4}'/g' > "${MAILSERVER_DOCKER_COMPOSE_FILE}"
 }
 
 

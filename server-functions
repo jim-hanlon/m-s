@@ -56,14 +56,12 @@ function instance:read-tag() {
     local instanceId=$(instance:id)
     local region=$(instance:region)
     aws ec2 describe-tags --region "${region}" \
-        --filters Name=resource-id,Values=${instanceId} Name=key,Values=$key | jq '.Tags[].Value'
+        --filters Name=resource-id,Values=${instanceId} Name=key,Values=$key | jq -r '.Tags[].Value'
 }
 
 
 function instance:region() {
-    curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | \
-    jq '.region' | \
-    tr -d '"'
+    curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region'
 }
 
 
@@ -76,6 +74,15 @@ function instance:set-a-records() {
 function instance:set-cname-records() {
     local ec2PublicHostname=$(instance:public-hostname)
     route-53:set-ipv4-a-record "${ec2PublicHostname}" 300 "${@}"
+}
+
+
+function mailserver:get-secret() {
+    local secretId=${1:?Need secret name'
+    aws secretsmanager get-secret-value --secret-id "${secretId}" | \
+        jq .SecretString | \
+        sed -E 's/(^"|"$)//g' | \
+        sed -E 's/\\"/"/g'
 }
 
 
@@ -99,9 +106,14 @@ function mailserver:install() {
         instance:create-tag BootstrapStatus 'initializing mailserver'
         mailserver:initialize
         mailserver:start
+        local adminSecret=$(mailserver:get-secret mailserver-admin)
+        local adminAccount=$(echo "${relayHostSecret}" | jq -r '.admin_account')
+        local adminDomain=$(echo "${adminSecret}" | jq -r '.admin_domain')
+        local adminMode=$(echo "${relayHostSecret}" | jq -r '.admin_mode')
+        local iadminPw=$(echo "${relayHostSecret}" | jq -r '.admin_pw')
         for hostname in $(grep HOSTNAMES ${MAILSERVER_CONFIGURATION_FILE} | cut -d= -f2 | cut -d, -f1); do
             hostname=$(echo "${hostname}" | sed -E 's/^mail\.//')
-            docker-compose -p mailu exec admin flask mailu admin  --mode update postmaster ${hostname} postmaster
+            docker-compose -p mailu exec admin flask mailu admin--mode "${adminMode" "${adminAccount}" "${hostname}" "${iadminPw}"
         done
         ((crontab -l 2>/dev/null | grep -v '@reboot'); echo "@reboot /bin/bash -c 'source ${MAILSERVER_HOME}/server-functions && instance:create-tag BootstrapStatus complete && mailserver:initialize && mailserver:start'") | crontab -
     fi
@@ -123,9 +135,22 @@ function mailserver:install_mailu_configuration() {
     cd "${MAILSERVER_HOME}"
     git pull
     local mailuKey=$(head /dev/urandom | tr -dc A-Z0-9 | head -c 16)
+    local relayHostSecret=$(mailserver:get-secret mailserver-relayhost)
+    local relayHost=$(echo "${relayHostSecret}" | jq -r '.relayhost')
+    local relayUser==$(echo "${relayHostSecret}" | jq -r '."smtp-username"')
+    local relayPassword==$(echo "${relayHostSecret}" | jq -r '.smtp-password')
     local version=$(( $(ls -1 "${MAILSERVER_CONFIGURATION_FILE}*" 2>/dev/null | grep -E '\.env(.[1-9][0-9]*)?$' | wc -l ) + 1 ))
     [[ -f "${MAILSERVER_CONFIGURATION_FILE}" ]] && cp "${MAILSERVER_CONFIGURATION_FILE}" "${MAILSERVER_CONFIGURATION_FILE}.${version}"
-    cat "${MAILSERVER_CONFIGURATION_FILE}.${version}" | sed -E 's/^SECRET_KEY=.*$/SECRET_KEY='${mailuKey}'/' > "${MAILSERVER_CONFIGURATION_FILE}"
+    (umask o=r,g=,w= && cat "${MAILSERVER_CONFIGURATION_FILE}.${version}" | \
+        sed -E 's/^SECRET_KEY=.*$/SECRET_KEY='${mailuKey}'/' \
+        sed -E 's/^RELAYHOST=.*$/RELAYHOST='${relayHost}'/' \
+        sed -E 's/^RELAYUSER=.*$/RELAYUSER='${relayUser}'/' \
+        sed -E 's/^RELAYPASSWORD=.*$/RELAYPASSWORD='${relayPassword}'/' \
+        sed -E 's/^INITIAL_ADMIN_ACCOUNT=.*$/INITIAL_ADMIN_ACCOUNT='${initialAdminAccount}'/' \
+        sed -E 's/^INITIAL_ADMIN_PW=.*$/INITIAL_ADMIN_PW='${initialAdminPw}'/' \
+        > "${MAILSERVER_CONFIGURATION_FILE}")
+
+        # sed -E 's/^INITIAL_ADMIN_DOMAIN=.*$/INITIAL_ADMIN_DOMAIN='${initialAdminDomain}'/' \
 
     local localIPv4=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
     version=$(( $(ls -1 "${MAILSERVER_DOCKER_COMPOSE_FILE}*" 2>/dev/null | grep -E '\.env(.[1-9][0-9]*)?$' | wc -l ) + 1 ))
@@ -141,10 +166,10 @@ function mailserver:mail-server-names() {
 
 
 function mailserver:mount-mailserver-data() {
-    local availabilityZone=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq '.availabilityZone' | tr -d '"')
+    local availabilityZone=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.availabilityZone')
     local region=$(instance:region)
     local fileSystemId=$(aws --region ${region} efs describe-file-systems | \
-                         jq '.FileSystems | select(.[].Tags[].Key == "Name") | select(.[].Tags[].Value == "'${MAILSERVER_DATA_FILESYSTEM}'") | .[].FileSystemId' | tr -d '"')
+                         jq -r '.FileSystems | select(.[].Tags[].Key == "Name") | select(.[].Tags[].Value == "'${MAILSERVER_DATA_FILESYSTEM}'") | .[].FileSystemId')
     local fileSystemName="${fileSystemId}.efs.${region}.amazonaws.com" 
     echo "${fileSystemName}:/ ${MAILSERVER_DATA_MOUNTPOINT} nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 0 0" >> /etc/fstab
     mkdir -p "${MAILSERVER_DATA_MOUNTPOINT}"

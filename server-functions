@@ -81,10 +81,8 @@ function instance:set-cname-records() {
 
 function mailserver:get-secret() {
     local secretId=${1:?Need secret name}
-    aws secretsmanager get-secret-value --secret-id "${secretId}" | \
-        jq .SecretString | \
-        sed -E 's/(^"|"$)//g' | \
-        sed -E 's/\\"/"/g'
+    local region=$(instance:region)
+    aws secretsmanager get-secret-value --region "${region}" --secret-id "${secretId}" | jq -r .SecretString
 }
 
 

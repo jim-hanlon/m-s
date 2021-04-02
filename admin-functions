@@ -150,6 +150,12 @@ usermod -aG docker ubuntu
 pip3 install docker-compose
 mkdir -p \${MAILSERVER_HOME}
 git clone https://github.com/jim-hanlon/m-s \${MAILSERVER_HOME}
+
+(echo &&
+ echo "export MAILSERVER_HOME=${MAILSERVER_HOME}' &&
+ echo 'cd "${MAILSERVER_HOME}"')
+) >> /home/ubuntu/.bashrc
+
 source  \${MAILSERVER_HOME}/server-functions
 mailserver:install
 EOF

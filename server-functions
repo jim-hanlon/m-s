@@ -1,5 +1,9 @@
 #!/bin/bash
 
+export AWS_MAGIC_ENDPOINT=http://169.254.169.254/latest
+export AWS_DYNAMIC_ENDPOINT=${AWS_MAGIC_ENDPOINT}/dynamic
+export AWS_META_DATA_ENDPOINT=${AWS_MAGIC_ENDPOINT}/meta-data
+
 export MAILSERVER_HOME=${MAILSERVER_HOME:-/var/lib/mailu}
 export MAILSERVER_CONFIGURATION_FILE=${MAILSERVER_CONFIGURATION_FILE:-${MAILSERVER_HOME}/mailu.env}
 export MAILSERVER_CONFIGURATION_FILE_TEMPLATE=${MAILSERVER_CONFIGURATION_FILE_TEMPLATE:-${MAILSERVER_CONFIGURATION_FILE}.tmpl8}
@@ -39,17 +43,17 @@ function instance:delete-tag() {
 
 
 function instance:id() {
-    curl -s http://169.254.169.254/latest/meta-data/instance-id
+    curl -s "${AWS_META_DATA_ENDPOINT}/instance-id"
 }
 
 
 function instance:public-hostname() {
-    curl -s http://169.254.169.254/latest/meta-data/public-hostname
+    curl -s "${AWS_META_DATA_ENDPOINT}/public-hostname"
 }
 
 
 function instance:public-ipv4() {
-    curl -s http://169.254.169.254/latest/meta-data/public-ipv4
+    curl -s "${AWS_META_DATA_ENDPOINT}/public-ipv4"
 }
 
 
@@ -62,8 +66,13 @@ function instance:read-tag() {
 }
 
 
+function instance:availability-zone() {
+    curl -s "${AWS_DYNAMIC_ENDPOINT}/instance-identity/document" | jq -r '.availabilityZone'
+}
+
+
 function instance:region() {
-    curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region'
+    curl -s "${AWS_DYNAMIC_ENDPOINT}/instance-identity/document" | jq -r '.region'
 }
 
 
@@ -157,7 +166,7 @@ function mailserver:install_mailu_configuration() {
 
         # sed -E 's/^INITIAL_ADMIN_DOMAIN=.*$/INITIAL_ADMIN_DOMAIN='${initialAdminDomain}'/' \
 
-    local localIPv4=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+    local localIPv4=$(curl -s "${AWS_META_DATA_ENDPOINT}/local-ipv4")
     version=$(( $(ls -1 "${MAILSERVER_DOCKER_COMPOSE_FILE}*" 2>/dev/null | grep -E '\.env(.[1-9][0-9]*)?$' | wc -l ) + 1 ))
     [[ -f "${MAILSERVER_DOCKER_COMPOSE_FILE}" ]] && cp "${MAILSERVER_DOCKER_COMPOSE_FILE}" "${MAILSERVER_DOCKER_COMPOSE_FILE}.${version}"
     cat "${MAILSERVER_DOCKER_COMPOSE_FILE_TEMPLATE}" | sed 's/XXX\.XXX\.XXX\.XXX/'${localIPv4}'/g' > "${MAILSERVER_DOCKER_COMPOSE_FILE}"
@@ -170,7 +179,7 @@ function mailserver:mail-server-names() {
 
 
 function mailserver:mount-mailserver-data() {
-    local availabilityZone=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.availabilityZone')
+    local availabilityZone=$(instance:availability-zone)
     local region=$(instance:region)
     local fileSystemId=$(aws --region ${region} efs describe-file-systems | \
                          jq -r '.FileSystems | select(.[].Tags[].Key == "Name") | select(.[].Tags[].Value == "'${MAILSERVER_DATA_FILESYSTEM}'") | .[].FileSystemId')

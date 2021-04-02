@@ -107,7 +107,7 @@ function route-53:set-ipv4-a-or-cname-record() {
     local address=${1:?Need  address}
     shift
     local ttl=${1:-300}
-    (echo "${ttl}" | grep -E -q '^\d+$') && shift
+    shift
     for name in "${@}"; do
         local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
         local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep "${domainName}" | awk '{print $3}' | cut -d/ -f3)

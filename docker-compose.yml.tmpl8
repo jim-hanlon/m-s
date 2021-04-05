@@ -11,7 +11,7 @@ services:
     image: redis:alpine
     restart: always
     volumes:
-      - "/var/mail/redis:/data"
+      - "/var/lib/mailu/redis:/data"
     
   # Core services
   front:
@@ -47,8 +47,8 @@ services:
       - "XXX.XXX.XXX.XXX:993:993"
       - "::1:993:993"
     volumes:
-      - "/var/mail/certs:/certs"
-      - "/var/mail/overrides/nginx:/overrides"
+      - "/var/lib/mailu/certs:/certs"
+      - "/var/lib/mailu/overrides/nginx:/overrides"
 
   resolver:
     image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}unbound:${MAILU_VERSION:-1.7}
@@ -63,8 +63,8 @@ services:
     restart: always
     env_file: /var/lib/mailu/mailu.env
     volumes:
-      - "/var/mail/data:/data"
-      - "/var/mail/dkim:/dkim"
+      - "/var/lib/mailu/data:/data"
+      - "/var/lib/mailu/dkim:/dkim"
     depends_on:
       - redis
 
@@ -73,8 +73,8 @@ services:
     restart: always
     env_file: /var/lib/mailu/mailu.env
     volumes:
-      - "/var/mail/mail:/mail"
-      - "/var/mail/overrides:/overrides"
+      - "/var/lib/mailu/mail:/mail"
+      - "/var/lib/mailu/overrides:/overrides"
     depends_on:
       - front
 
@@ -83,7 +83,7 @@ services:
     restart: always
     env_file: /var/lib/mailu/mailu.env
     volumes:
-      - "/var/mail/overrides:/overrides"
+      - "/var/lib/mailu/overrides:/overrides"
     depends_on:
       - front
       - resolver
@@ -95,9 +95,9 @@ services:
     restart: always
     env_file: /var/lib/mailu/mailu.env
     volumes:
-      - "/var/mail/filter:/var/lib/rspamd"
-      - "/var/mail/dkim:/dkim"
-      - "/var/mail/overrides/rspamd:/etc/rspamd/override.d"
+      - "/var/lib/mailu/filter:/var/lib/rspamd"
+      - "/var/lib/mailu/dkim:/dkim"
+      - "/var/lib/mailu/overrides/rspamd:/etc/rspamd/override.d"
     depends_on:
       - front
       - resolver
@@ -110,7 +110,7 @@ services:
     restart: always
     env_file: /var/lib/mailu/mailu.env
     volumes:
-      - "/var/mail/filter:/data"
+      - "/var/lib/mailu/filter:/data"
     depends_on:
       - resolver
     dns:
@@ -121,7 +121,7 @@ services:
     restart: always
     env_file: /var/lib/mailu/mailu.env
     volumes:
-      - "/var/mail/dav:/data"
+      - "/var/lib/mailu/dav:/data"
 
   fetchmail:
     image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}fetchmail:${MAILU_VERSION:-1.7}
@@ -138,7 +138,7 @@ services:
     restart: always
     env_file: /var/lib/mailu/mailu.env
     volumes:
-      - "/var/mail/webmail:/data"
+      - "/var/lib/mailu/webmail:/data"
     depends_on:
       - imap
 

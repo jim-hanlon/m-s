@@ -152,8 +152,8 @@ mkdir -p \${MAILSERVER_HOME}
 git clone https://github.com/jim-hanlon/m-s \${MAILSERVER_HOME}
 
 (echo &&
- echo "export MAILSERVER_HOME=${MAILSERVER_HOME}' &&
- echo 'cd "${MAILSERVER_HOME}"')
+ echo 'export MAILSERVER_HOME="\${MAILSERVER_HOME}" && '
+ echo 'cd "\${MAILSERVER_HOME}"'
 ) >> /home/ubuntu/.bashrc
 
 source  \${MAILSERVER_HOME}/server-functions

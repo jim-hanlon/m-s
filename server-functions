@@ -110,8 +110,13 @@ function mailserver:initialize() {
 
 
 function mailserver:install-crontab-reboot-entry() {
-    ((crontab -l 2>/dev/null | grep -v '@reboot'); \
-     echo "@reboot /bin/bash -c '(source /etc/environment && source ${MAILSERVER_HOME}/server-functions && instance:create-tag BootstrapStatus complete && mailserver:initialize && mailserver:start) >/var/log/reboot.log 2>&1'") | crontab -
+    local cronline="@reboot /bin/bash -c '(source /etc/environment && env && "
+    cronline="${cronline} source ${MAILSERVER_HOME}/server-functions && "
+    cronline="${cronline} instance:create-tag BootstrapStatus complete && "
+    cronline="${cronline} mailserver:initialize && mailserver:start) "
+    cronline="${cronline} >/var/log/reboot.log 2>&1)'"
+    export cronline="${cronline}"
+    ((crontab -l 2>/dev/null | grep -v '@reboot') ; echo "${cronline}") | crontab -
 }
 
 

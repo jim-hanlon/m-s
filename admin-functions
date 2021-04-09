@@ -76,7 +76,7 @@ function mailserver:authorize-my-ip-for-ssh-ingress() {
 
 
 mailserver:create-instance() {
-    # local postmasterPassword=${1:?Need postmaster password)
+    local name=${1:-''}
     echo "[INFO] looking for latest Ubuntu AMI" >/dev/stderr
     local ami=$(ubuntu:find-latest-ami)
     echo "[INFO] using AMI ${ami}" >/dev/stderr
@@ -84,6 +84,10 @@ mailserver:create-instance() {
     echo "[INFO] using security group ${sg}" >/dev/stderr
     local subnet=$(util:find-random-subnet)
     echo "[INFO] using subnet ${subnet}" >/dev/stderr
+    local tagoption=''
+    if [[ -n "${name}" ]]; then
+        tagoption="--tag-specifications ResourceType=instance,Tags=[{Key='Name',Value='${name}'}]"
+    fi
     local response=$(aws ec2 run-instances \
         --image-id "${ami}" \
         --count 1 \
@@ -91,6 +95,7 @@ mailserver:create-instance() {
         --key-name "${MAILSERVER_KEY_PAIR}" \
         --security-group-ids "${sg}" \
         --subnet-id "${subnet}" \
+        ${tagoption} \
         --instance-initiated-shutdown-behavior terminate \
         --user-data file:///dev/stdin <<EOF
 #!/bin/bash

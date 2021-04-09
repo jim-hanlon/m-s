@@ -114,7 +114,7 @@ function mailserver:install-crontab-reboot-entry() {
     cronline="${cronline} source ${MAILSERVER_HOME}/server-functions && "
     cronline="${cronline} instance:create-tag BootstrapStatus complete && "
     cronline="${cronline} mailserver:initialize && mailserver:start) "
-    cronline="${cronline} >/var/log/reboot.log 2>&1)'"
+    cronline="${cronline} >/var/log/reboot.log 2>&1'"
     export cronline="${cronline}"
     ((crontab -l 2>/dev/null | grep -v '@reboot') ; echo "${cronline}") | crontab -
 }

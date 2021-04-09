@@ -11,48 +11,48 @@ services:
     image: redis:alpine
     restart: always
     volumes:
-      - "/var/lib/mailu/redis:/data"
+      - "MAILSERVER_DATA_MOUNTPOINT/redis:/data"
     
   # Core services
   front:
     image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}nginx:${MAILU_VERSION:-1.7}
     restart: always
-    env_file: /var/lib/mailu/mailu.env
+    env_file: MAILSERVER_HOME/mailu.env
     logging:
       driver: json-file
     ports:
       # port access is controlled by the instance's security group'
       # HTTP (only open HTTPS)
-      - "XXX.XXX.XXX.XXX:80:80"
+      - "LOCAL_IPV4:80:80"
       - "::1:80:80"
       # HTTPS
-      - "XXX.XXX.XXX.XXX:443:443"
+      - "LOCAL_IPV4:443:443"
       - "::1:443:443"
       # SMTP
-      - "XXX.XXX.XXX.XXX:25:25"
+      - "LOCAL_IPV4:25:25"
       - "::1:25:25"
       # SMTPS (prefered)
-      - "XXX.XXX.XXX.XXX:465:465"
+      - "LOCAL_IPV4:465:465"
       - "::1:465:465"
       # SMTP (TLS/SSL)
-      - "XXX.XXX.XXX.XXX:587:587"
+      - "LOCAL_IPV4:587:587"
       - "::1:587:587"
-      # - "XXX.XXX.XXX.XXX:110:110"
+      # - "LOCAL_IPV4:110:110"
       # - "::1:110:110"
-      # - "XXX.XXX.XXX.XXX:995:995"
+      # - "LOCAL_IPV4:995:995"
       # - "::1:995:995"
-      # - "XXX.XXX.XXX.XXX:143:143"
+      # - "LOCAL_IPV4:143:143"
       # - "::1:143:143"
       # IMAPS (TLS/SSL)
-      - "XXX.XXX.XXX.XXX:993:993"
+      - "LOCAL_IPV4:993:993"
       - "::1:993:993"
     volumes:
-      - "/var/lib/mailu/certs:/certs"
-      - "/var/lib/mailu/overrides/nginx:/overrides"
+      - "MAILSERVER_DATA_MOUNTPOINT/certs:/certs"
+      - "MAILSERVER_HOME/overrides/nginx:/overrides"
 
   resolver:
     image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}unbound:${MAILU_VERSION:-1.7}
-    env_file: /var/lib/mailu/mailu.env
+    env_file: MAILSERVER_HOME/mailu.env
     restart: always
     networks:
       default:
@@ -61,29 +61,29 @@ services:
   admin:
     image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}admin:${MAILU_VERSION:-1.7}
     restart: always
-    env_file: /var/lib/mailu/mailu.env
+    env_file: MAILSERVER_HOME/mailu.env
     volumes:
-      - "/var/lib/mailu/data:/data"
-      - "/var/lib/mailu/dkim:/dkim"
+      - "MAILSERVER_DATA_MOUNTPOINT/data:/data"
+      - "MAILSERVER_DATA_MOUNTPOINT/dkim:/dkim"
     depends_on:
       - redis
 
   imap:
     image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}dovecot:${MAILU_VERSION:-1.7}
     restart: always
-    env_file: /var/lib/mailu/mailu.env
+    env_file: MAILSERVER_HOME/mailu.env
     volumes:
-      - "/var/lib/mailu/mail:/mail"
-      - "/var/lib/mailu/overrides:/overrides"
+      - "MAILSERVER_DATA_MOUNTPOINT/mail:/mail"
+      - "MAILSERVER_HOME/overrides:/overrides"
     depends_on:
       - front
 
   smtp:
     image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}postfix:${MAILU_VERSION:-1.7}
     restart: always
-    env_file: /var/lib/mailu/mailu.env
+    env_file: MAILSERVER_HOME/mailu.env
     volumes:
-      - "/var/lib/mailu/overrides:/overrides"
+      - "MAILSERVER_HOME/overrides:/overrides"
     depends_on:
       - front
       - resolver
@@ -93,11 +93,11 @@ services:
   antispam:
     image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}rspamd:${MAILU_VERSION:-1.7}
     restart: always
-    env_file: /var/lib/mailu/mailu.env
+    env_file: MAILSERVER_HOME/mailu.env
     volumes:
-      - "/var/lib/mailu/filter:/var/lib/rspamd"
-      - "/var/lib/mailu/dkim:/dkim"
-      - "/var/lib/mailu/overrides/rspamd:/etc/rspamd/override.d"
+      - "MAILSERVER_DATA_MOUNTPOINT/filter:/var/lib/rspamd"
+      - "MAILSERVER_DATA_MOUNTPOINT/dkim:/dkim"
+      - "MAILSERVER_HOME/overrides/rspamd:/etc/rspamd/override.d"
     depends_on:
       - front
       - resolver
@@ -108,9 +108,9 @@ services:
   antivirus:
     image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}clamav:${MAILU_VERSION:-1.7}
     restart: always
-    env_file: /var/lib/mailu/mailu.env
+    env_file: MAILSERVER_HOME/mailu.env
     volumes:
-      - "/var/lib/mailu/filter:/data"
+      - "MAILSERVER_DATA_MOUNTPOINT/filter:/data"
     depends_on:
       - resolver
     dns:
@@ -119,14 +119,14 @@ services:
   webdav:
     image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}radicale:${MAILU_VERSION:-1.7}
     restart: always
-    env_file: /var/lib/mailu/mailu.env
+    env_file: MAILSERVER_HOME/mailu.env
     volumes:
-      - "/var/lib/mailu/dav:/data"
+      - "MAILSERVER_DATA_MOUNTPOINT/dav:/data"
 
   fetchmail:
     image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}fetchmail:${MAILU_VERSION:-1.7}
     restart: always
-    env_file: /var/lib/mailu/mailu.env
+    env_file: MAILSERVER_HOME/mailu.env
     depends_on:
       - resolver
     dns:
@@ -136,9 +136,9 @@ services:
   webmail:
     image: ${DOCKER_ORG:-mailu}/${DOCKER_PREFIX:-}roundcube:${MAILU_VERSION:-1.7}
     restart: always
-    env_file: /var/lib/mailu/mailu.env
+    env_file: MAILSERVER_HOME/mailu.env
     volumes:
-      - "/var/lib/mailu/webmail:/data"
+      - "MAILSERVER_DATA_MOUNTPOINT/webmail:/data"
     depends_on:
       - imap
 

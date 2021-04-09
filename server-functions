@@ -173,13 +173,12 @@ function mailserver:install_mailu_configuration() {
         # sed -E 's/^INITIAL_ADMIN_DOMAIN=.*$/INITIAL_ADMIN_DOMAIN='${initialAdminDomain}'/' \
 
     local localIPv4=$(curl -s "${AWS_META_DATA_ENDPOINT}/local-ipv4")
-    version=$(( $(ls -1 "${MAILSERVER_DOCKER_COMPOSE_FILE}*" 2>/dev/null | grep -E '\.env(.[1-9][0-9]*)?$' | wc -l ) + 1 ))
+    version=$(( $(ls -1 "${MAILSERVER_DOCKER_COMPOSE_FILE}*" 2>/dev/null | grep -E '\.yml(.[1-9][0-9]*)?$' | wc -l ) + 1 ))
     [[ -f "${MAILSERVER_DOCKER_COMPOSE_FILE}" ]] && cp "${MAILSERVER_DOCKER_COMPOSE_FILE}" "${MAILSERVER_DOCKER_COMPOSE_FILE}.${version}"
     cat "${MAILSERVER_DOCKER_COMPOSE_FILE_TEMPLATE}" | \
         sed -E "s|LOCAL_IPV4|${localIPv4}|g" | \
         sed -E "s|MAILSERVER_HOME|${MAILSERVER_HOME}|g" | \
-        sed -E "s|MAILSERVER_DATA_MOUNTPOINT|${MAILSERVER_DATA_MOUNTPOINT}|g"
-        > "${MAILSERVER_DOCKER_COMPOSE_FILE}"
+        sed -E "s|MAILSERVER_DATA_MOUNTPOINT|${MAILSERVER_DATA_MOUNTPOINT}|g" > "${MAILSERVER_DOCKER_COMPOSE_FILE}"
 }
 
 

@@ -362,10 +362,17 @@ function util:stop-instance-by-name() {
 }
 
 
-function util:terminate-instances() {
+function util:terminate-instance() {
     local instanceId=${1:?Need Instance ID}
     aws ec2 terminate-instances --instance-ids "${@}" --output text
 }
+
+
+function util:terminate-instance-by-name() {
+    local name=${1:?Need NAME}
+    util:terminate-instances $(util:instance-by-name "${name}")
+}
+
 
 function util:terminate-running-instances() {
     util:terminate-instance  $(util:instance-data | grep running | awk '{print $1}')

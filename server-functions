@@ -183,7 +183,13 @@ function mailserver:install_mailu_configuration() {
 
 
 function mailserver:mail-server-names() {
-    echo $(for d in $(grep HOSTNAMES "${MAILSERVER_CONFIGURATION_FILE}" | cut -d= -f2 | cut -d, --output-delimiter ' ' -f1-); do echo "mail.${d}"; done)
+    for d in $(cat "${MAILSERVER_CONFIGURATION_FILE}" | \
+               grep HOSTNAME | \
+               cut -d= -f2 | \
+               cut -d, --output-delimiter ' ' -f1- | \
+               perl -0777 -pe 's/(?:mail\.)?([a-z\.]*)/\1/g'); do
+        echo mail.${d}
+    done | sort -u
 }
 
 

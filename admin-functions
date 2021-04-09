@@ -243,15 +243,15 @@ function util:find-random-subnet() {
     shuf --random-source /dev/random -n 1
 }
 
-function util:instance-by-cname() {
-    local cname=${1:?Need CNAME}
+function util:instance-by-name() {
+    local name=${1:?Need CNAME}
     aws ec2 describe-instances \
-        --query 'Reservations[*].Instances[*][].[InstanceId, Tags[?starts_with(Key, `CNAME`)].Value|join(`:`,@)]' --output text |
-    grep "${cname}" | awk '{print $1}'
+        --query 'Reservations[*].Instances[*][].[InstanceId, Tags[?starts_with(Key, `Name`)].Value|join(`:`,@)]' --output text |
+    grep "${name}" | awk '{print $1}'
 }
 
 
-function util:instance-cnames() {
+function util:instance-name() {
     local instanceId=${1:?Need Instance ID}
     util:instance-data "${instanceId}" | awk '{$1="";$2="";$3="";$4="";print $0}' | sed -E 's/(^[ ]+|[ ]+$)//g' | tr '[:space:]' '\n'
 }
@@ -262,13 +262,13 @@ function util:instance-data() {
     local filters=$([[ -n "${instanceId}" ]] && echo "--filters Name=instance-id,Values=${instanceId}")
     aws ec2 describe-instances \
         ${filters} \
-        --query 'Reservations[*].Instances[*].[InstanceId, State.Name, PublicDnsName, PublicIpAddress, Tags[?Key==`CNAMES`].Value|[0]][]' --output text
+        --query 'Reservations[*].Instances[*].[InstanceId, State.Name, PublicDnsName, PublicIpAddress, Tags[?Key==`Name`].Value|[0]][]' --output text
 }
 
 
-function util:instance-data-by-cname() {
-    local cname=${1:?Need CNAME}
-    util:instance-data | grep "${cname}"
+function util:instance-data-by-name() {
+    local name=${1:?Need NAME}
+    util:instance-data | grep "${name}"
 }
 
 
@@ -311,9 +311,9 @@ function util:instance-state() {
 }
 
 
-function util:instance-state-by-cname() {
-    local cname=${1:?Need CNAME}
-    util:instance-data-by-cname "${cname}" | awk '{ printf("%s\n", $2) }'
+function util:instance-state-by-name() {
+    local name=${1:?Need NAME}
+    util:instance-data-by-name "${name}" | awk '{ printf("%s\n", $2) }'
 }
 
 
@@ -336,9 +336,9 @@ function util:start-instance() {
 }
 
 
-function util:start-instance-by-cname() {
-    local cname=${1:?Need CNAME}
-    util:start-instance $(util:instance-by-cname "${cname}")
+function util:start-instance-by-name() {
+    local name=${1:?Need NAME}
+    util:start-instance $(util:instance-by-name "${name}")
 }
 
 
@@ -356,9 +356,9 @@ function util:stop-instance() {
 }
 
 
-function util:stop-instance-by-cname() {
-    local cname=${1:?Need CNAME}
-    util:stop-instance $(util:instance-by-cname "${cname}")
+function util:stop-instance-by-name() {
+    local name=${1:?Need NAME}
+    util:stop-instance $(util:instance-by-name "${name}")
 }
 
 

@@ -95,8 +95,8 @@ mailserver:create-instance() {
         --key-name "${MAILSERVER_KEY_PAIR}" \
         --security-group-ids "${sg}" \
         --subnet-id "${subnet}" \
-        ${tagoption} \
         --instance-initiated-shutdown-behavior terminate \
+        ${tagoption} \
         --user-data file:///dev/stdin <<EOF
 #!/bin/bash
 
@@ -172,9 +172,9 @@ EOF
         echo "[INFO] instance ${instance} is running" >/dev/stderr
         local hostname=$(util:instance-public-hostname "${instance}")
         echo "[INFO] setting ${instance} security profile" >/dev/stderr
-        aws ec2 associate-iam-instance-profile \
+        local response=$(aws ec2 associate-iam-instance-profile \
             --instance-id ${instance} \
-            --iam-instance-profile Name=${MAILSERVER_INSTANCE_PROFILE}
+            --iam-instance-profile Name=${MAILSERVER_INSTANCE_PROFILE})
         echo "[INFO] created instance ${instance} @ ${hostname}" >/dev/stderr
         echo -n "[INFO] waiting for instance bootstrap to complete " >/dev/stderr
         local lastBootstrapStatus=$(instance:read-tag ${instance} BootstrapStatus)

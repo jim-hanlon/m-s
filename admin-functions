@@ -64,7 +64,8 @@ function instance:set-cname-records() {
 
 
 function mailserver:authorize-my-ip-for-ssh-ingress() {
-    local myIp=$(dig +short myip.opendns.com @resolver1.opendns.com)
+    # local myIp=$(dig +short myip.opendns.com @resolver1.opendns.com)
+    local myIp=$(curl -s http://whatismyip.akamai.com)
     local securityGroup=$(mailserver:get-security-group)
     aws ec2 authorize-security-group-ingress \
         --group-id "${securityGroup}" \

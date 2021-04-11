@@ -158,7 +158,7 @@ function mailserver:install_mailu_configuration() {
     local relayHost=$(echo "${relayHostSecret}" | jq -r '.relayhost')
     local relayUser=$(echo "${relayHostSecret}" | jq -r '.relayuser')
     local relayPassword=$(echo "${relayHostSecret}" | jq -r '.relaypassword')
-    local version=$(( $(ls -1 "${MAILSERVER_CONFIGURATION_FILE}*" 2>/dev/null | grep -E '\.env(\.[1-9][0-9]*)?$' | wc -l ) + 1 ))
+    local version=$(ls -1 "${MAILSERVER_CONFIGURATION_FILE}"* 2>/dev/null | grep -E '\.env(\.[1-9][0-9]*)?$' | wc -l )
     [[ -f "${MAILSERVER_CONFIGURATION_FILE}" ]] && cp "${MAILSERVER_CONFIGURATION_FILE}" "${MAILSERVER_CONFIGURATION_FILE}.${version}"
     (umask u=r,g=,o= && cat "${MAILSERVER_CONFIGURATION_FILE_TEMPLATE}" | \
         sed -E 's|SECRET_KEY=.*$|SECRET_KEY='${mailuKey}'|g' | \
@@ -167,7 +167,7 @@ function mailserver:install_mailu_configuration() {
         sed -E 's|RELAYPASSWORD=.*$|RELAYPASSWORD='${relayPassword}'|g' \
         > "${MAILSERVER_CONFIGURATION_FILE}")
     local localIPv4=$(curl -s "${AWS_META_DATA_ENDPOINT}/local-ipv4")
-    version=$(( $(ls -1 "${MAILSERVER_DOCKER_COMPOSE_FILE}*" 2>/dev/null | grep -E '\.yml(.[1-9][0-9]*)?$' | wc -l ) + 1 ))
+    version=$(ls -1 "${MAILSERVER_DOCKER_COMPOSE_FILE}"* 2>/dev/null | grep -E '\.yml(.[1-9][0-9]*)?$' | wc -l )
     [[ -f "${MAILSERVER_DOCKER_COMPOSE_FILE}" ]] && cp "${MAILSERVER_DOCKER_COMPOSE_FILE}" "${MAILSERVER_DOCKER_COMPOSE_FILE}.${version}"
     cat "${MAILSERVER_DOCKER_COMPOSE_FILE_TEMPLATE}" | \
         sed -E "s|LOCAL_IPV4|${localIPv4}|g" | \

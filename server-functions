@@ -88,12 +88,13 @@ function instance:set-cname-records() {
 }
 
 
-function function mailserver:get-account-emails() {
+function mailserver:get-account-emails() {
     local account=${1?:Need account}
     local domain=${1?:Need domain}
     sqlite3 "${MAILSERVER_DATA_MOUNTPOINT}" \
             "select email from user where localpart='${account}' and domain_name='${domain}'"
 }
+
 
 function mailserver:create-accounts() {
     local adminSecret=$(mailserver:get-secret mailserver-admin)

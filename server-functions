@@ -172,7 +172,7 @@ function mailserver:install_mailu_configuration() {
     local relayUser=$(echo "${relayHostSecret}" | jq -r '.relayuser')
     local relayPassword=$(echo "${relayHostSecret}" | jq -r '.relaypassword')
     local version=$(ls -1 "${MAILSERVER_CONFIGURATION_FILE}"* 2>/dev/null | grep -E '\.env(\.[1-9][0-9]*)?$' | wc -l )
-    [[ -f "${MAILSERVER_CONFIGURATION_FILE}" ]] && cp "${MAILSERVER_CONFIGURATION_FILE}" "${MAILSERVER_CONFIGURATION_FILE}.${version}"
+    [[ -f "${MAILSERVER_CONFIGURATION_FILE}" ]] && cp --archive "${MAILSERVER_CONFIGURATION_FILE}" "${MAILSERVER_CONFIGURATION_FILE}.${version}"
     (umask u=r,g=,o= && cat "${MAILSERVER_CONFIGURATION_FILE_TEMPLATE}" | \
         sed -E 's|SECRET_KEY=.*$|SECRET_KEY='${mailuKey}'|g' | \
         sed -E 's|RELAYHOST=.*$|RELAYHOST='${relayHost}'|g' | \
@@ -181,7 +181,7 @@ function mailserver:install_mailu_configuration() {
         > "${MAILSERVER_CONFIGURATION_FILE}")
     local localIPv4=$(curl -s "${AWS_META_DATA_ENDPOINT}/local-ipv4")
     version=$(ls -1 "${MAILSERVER_DOCKER_COMPOSE_FILE}"* 2>/dev/null | grep -E '\.yml(.[1-9][0-9]*)?$' | wc -l )
-    [[ -f "${MAILSERVER_DOCKER_COMPOSE_FILE}" ]] && cp "${MAILSERVER_DOCKER_COMPOSE_FILE}" "${MAILSERVER_DOCKER_COMPOSE_FILE}.${version}"
+    [[ -f "${MAILSERVER_DOCKER_COMPOSE_FILE}" ]] && cp --archive "${MAILSERVER_DOCKER_COMPOSE_FILE}" "${MAILSERVER_DOCKER_COMPOSE_FILE}.${version}"
     cat "${MAILSERVER_DOCKER_COMPOSE_FILE_TEMPLATE}" | \
         sed -E "s|LOCAL_IPV4|${localIPv4}|g" | \
         sed -E "s|MAILSERVER_HOME|${MAILSERVER_HOME}|g" | \
@@ -249,11 +249,12 @@ function mailserver:stop() {
 
 function mailserver:update-ubuntu-bashrc() {
     local bashrc=/home/ubuntu/.bashrc
-    local version=$(ls -1 "${bashrc}"* 2>/dev/null | grep -E '\.env(\.[1-9][0-9]*)?$' | wc -l )
+    local version=$(ls -1 "${bashrc}"* 2>/dev/null | grep -E '(\.[1-9][0-9]*)?$' | wc -l )
     touch "${bashrc}"
-    cp "${bashrc}" "${bashrc}.${version}"
+    cp --archive "${bashrc}" "${bashrc}.${version}"
+    chown ubuntu:ubuntu "${bashrc}.${version}"
     ((cat "${bashrc}.${version}" | grep -v MAILSERVER_HOME) &&
-     echo -e "\nexport MAILSERVER_HOME=${MAILSERVER_HOME} && cd \${MAILSERVER_HOME}\n") >> /home/ubuntu/.bashrc
+     echo -e "\nexport MAILSERVER_HOME=${MAILSERVER_HOME} && cd \"\${MAILSERVER_HOME}\"\n") >> /home/ubuntu/.bashrc
 }
 
 

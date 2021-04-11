@@ -88,7 +88,7 @@ function instance:set-cname-records() {
 }
 
 
-function mailserver:get-account-emails() {
+function function mailserver:get-account-emails() {
     local account=${1?:Need account}
     local domain=${1?:Need domain}
     sqlite3 "${MAILSERVER_DATA_MOUNTPOINT}" \
@@ -125,6 +125,7 @@ function mailserver:initialize() {
     mailserver:create-accounts
     mailserver:set-a-records
     mailserver:install-crontab-reboot-entry
+    mailserver:update-ubuntu-bashrc
 }
 
 
@@ -243,5 +244,16 @@ function mailserver:stop() {
     cd "${MAILSERVER_HOME}"
     docker-compose -p mailu down --remove-orphans
 }
+
+
+function mailserver:update-ubuntu-bashrc() {
+    local bashrc=/home/ubuntu/.bashrc
+    local version=$(ls -1 "${bashrc}"* 2>/dev/null | grep -E '\.env(\.[1-9][0-9]*)?$' | wc -l )
+    touch "${bashrc}"
+    cp "${bashrc}" "${bashrc}.${version}"
+    ((cat "${bashrc}.${version}" | grep -v MAILSERVER_HOME) &&
+     echo -e "\nexport MAILSERVER_HOME=${MAILSERVER_HOME} && cd \${MAILSERVER_HOME}\n") >> /home/ubuntu/.bashrc
+}
+
 
 

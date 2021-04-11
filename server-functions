@@ -142,7 +142,7 @@ function mailserver:get-additional-domain-names() {
     cut -d= -f2 | \
     tr ',' '\n' | \
     perl -0777 -pe 's/(?:[a-z]+\.)?([a-z\.]*)/\1/g' | \
-    grep -v "$(mailserver:get-primary-domain-name:)" | \
+    grep -v "$(mailserver:get-primary-domain-name)" | \
     sort -u
 }
 

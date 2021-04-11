@@ -88,6 +88,46 @@ function instance:set-cname-records() {
 }
 
 
+function mailserver:create-accounts() {
+    local adminSecret=$(mailserver:get-secret mailserver-admin)
+    local adminAccount=$(echo "${adminSecret}" | jq -r '.admin_account')
+    local adminEmail="${adminAccount}@$(mailserver:get-primary-domain-name)"
+    local adminPw=$(echo "${adminSecret}" | jq -r '.admin_pw')
+    docker-compose -p mailu exec admin flask mailu user-delete "${adminEmail}"
+    docker-compose -p mailu exec admin flask mailu alias-delete "${adminEmail}"
+    docker-compose -p mailu exec admin flask mailu admin "${adminAccount}" "$(mailserver:get-primary-domain-name)" "${adminPw}"
+    local aliases=
+    for domain in $(mailserver:get-additional-domain-names); do
+        aliases="${aliases},${adminAccount}@${domain}"
+    done
+    aliases=$(echo "${aliases}" | cut -d, -f2-)
+    docker-compose -p mailu exec admin flask mailu alias "${adminAccount}" "$(mailserver:get-primary-domain-name)" "${aliases}"
+
+    local usersSecret=$(mailserver:get-secret mailserver-users)
+    local nUsers=$(echo "${usersSecret}" | jq '.users | length')
+    for i in $(seq 0 $(($l-1))); do
+        local name=$(echo "${usersSecret}" | jq -r ".users[$i].name")
+        local domain=$(echo "${usersSecret}" | jq -r ".users[$i].domain")
+        local email="${name}@${domain}"
+        local password=$(echo "${usersSecret}" | jq -r ".users[$i].password")
+        local aliases=$(echo "${usersSecret}" | jq -r ".users[$i].aliases")
+        local alias_wildcard=$(echo "${usersSecret}" | jq -r ".users[$i].alias_wildcard")
+        local wildcardOption=$(([[ "$alias_wildcard" == 'true' ]] && echo '--wildcard') || echo '')
+        local is_admin=$(echo "${usersSecret}" | jq -r ".users[$i].is_admin")
+        docker-compose -p mailu exec admin flask mailu user-delete "${email}"
+        docker-compose -p mailu exec admin flask mailu alias-delete "${email}"
+        if [[ "${is_admin}" == "true" ]]; then
+            docker-compose -p mailu exec admin flask mailu admin "${name}" "${domain}" "${password}"
+        else
+            docker-compose -p mailu exec admin flask mailu user "${name}" "${domain}" "${password}"
+        fi
+        if [[ -n "${aliases}" ]]; then
+            docker-compose -p mailu exec admin flask mailu alias "${wildcardOption}" "${name}" "${domain}" "${aliases}"
+        fi
+    done
+}
+
+
 function mailserver:get-account-emails() {
     local account=${1?:Need account}
     local domain=${1?:Need domain}
@@ -96,16 +136,35 @@ function mailserver:get-account-emails() {
 }
 
 
-function mailserver:create-accounts() {
-    local adminSecret=$(mailserver:get-secret mailserver-admin)
-    local adminAccount=$(echo "${adminSecret}" | jq -r '.admin_account')
-    local adminDomain=$(echo "${adminSecret}" | jq -r '.admin_domain')
-    local adminMode=$(echo "${adminSecret}" | jq -r '.admin_mode')
-    local adminPw=$(echo "${adminSecret}" | jq -r '.admin_pw')
-    for domain in $(mailserver:mail-domain-names); do
-        docker-compose -p mailu exec admin flask mailu admin --mode "${adminMode}" "${adminAccount}" "${domain}" "${adminPw}"
+function mailserver:get-additional-domain-names() {
+    cat "${MAILSERVER_CONFIGURATION_FILE}" | \
+    grep -E '^HOSTNAMES=' | \
+    cut -d= -f2 | \
+    tr ',' '\n' | \
+    perl -0777 -pe 's/(?:[a-z]+\.)?([a-z\.]*)/\1/g' | \
+    grep -v "$(mailserver:primary-domain-name)" | \
+    sort -u
+}
+
+
+function mailserver:get-mail-domain-names() {
+    (mailserver:get-primary-domain-name && mailserver:get-additional-domain-names) | sort -u
+}
+
+
+function mailserver:get-mail-server-names() {
+    for d in $(mailserver:get-mail-domain-names); do
+        echo mail.${d}
     done
 }
+
+
+function mailserver:get-primary-domain-name() {
+    cat "${MAILSERVER_CONFIGURATION_FILE}" | \
+    grep -E '^DOMAIN=' | \
+    cut -d= -f2
+}
+
 
 function mailserver:get-secret() {
     local secretId=${1:?Need secret name}
@@ -189,29 +248,6 @@ function mailserver:install_mailu_configuration() {
 }
 
 
-function mailserver:mail-domain-names() {
-    ((cat "${MAILSERVER_CONFIGURATION_FILE}" | \
-        grep -E '^DOMAIN=' | \
-        cut -d= -f2 \
-     ) && \
-     (cat "${MAILSERVER_CONFIGURATION_FILE}" | \
-        grep -E '^HOSTNAMES=' | \
-        cut -d= -f2 | \
-        tr ',' '\n' | \
-        perl -0777 -pe 's/(?:[a-z]+\.)?([a-z\.]*)/\1/g' \
-     )
-    ) | \
-    sort -u
-}
-
-
-function mailserver:mail-server-names() {
-    for d in $(mailserver:mail-domain-names); do
-        echo mail.${d}
-    done
-}
-
-
 function mailserver:mount-mailserver-data() {
     local availabilityZone=$(instance:availability-zone)
     local region=$(instance:region)
@@ -226,12 +262,12 @@ function mailserver:mount-mailserver-data() {
 
 
 function mailserver:set-a-records() {
-    instance:set-a-records $(mailserver:mail-server-names)
+    instance:set-a-records $(mailserver:get-mail-server-names)
 }
 
 
 function mailserver:set-cnames() {
-    instance:set-cname-records  $(mailserver:mail-server-names)
+    instance:set-cname-records  $(mailserver:get-mail-server-names)
 }
 
 

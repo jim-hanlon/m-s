@@ -88,6 +88,24 @@ function instance:set-cname-records() {
 }
 
 
+function mailserver:get-account-emails() {
+    local account=${1?:Need account}
+    local domain=${1?:Need domain}
+    sqlite3 "${MAILSERVER_DATA_MOUNTPOINT}" \
+            "select email from user where localpart='${account}' and domain_name='${domain}'"
+}
+
+function mailserver:create-accounts() {
+    local adminSecret=$(mailserver:get-secret mailserver-admin)
+    local adminAccount=$(echo "${adminSecret}" | jq -r '.admin_account')
+    local adminDomain=$(echo "${adminSecret}" | jq -r '.admin_domain')
+    local adminMode=$(echo "${adminSecret}" | jq -r '.admin_mode')
+    local adminPw=$(echo "${adminSecret}" | jq -r '.admin_pw')
+    for domain in $(mailserver:mail-domain-names); do
+        docker-compose -p mailu exec admin flask mailu admin --mode "${adminMode}" "${adminAccount}" "${domain}" "${adminPw}"
+    done
+}
+
 function mailserver:get-secret() {
     local secretId=${1:?Need secret name}
     local region=$(instance:region)
@@ -104,6 +122,7 @@ function mailserver:idle() {
 function mailserver:initialize() {
     mailserver:mount-mailserver-data
     mailserver:install_mailu_configuration
+    mailserver:create-accounts
     mailserver:set-a-records
     mailserver:install-crontab-reboot-entry
 }
@@ -127,14 +146,6 @@ function mailserver:install() {
         instance:create-tag BootstrapStatus 'initializing mailserver'
         mailserver:initialize
         mailserver:start
-        local adminSecret=$(mailserver:get-secret mailserver-admin)
-        local adminAccount=$(echo "${relayHostSecret}" | jq -r '.admin_account')
-        local adminDomain=$(echo "${adminSecret}" | jq -r '.admin_domain')
-        local adminMode=$(echo "${relayHostSecret}" | jq -r '.admin_mode')
-        local adminPw=$(echo "${relayHostSecret}" | jq -r '.admin_pw')
-        for domain in $(mailserver:mail-domain-names); do
-            docker-compose -p mailu exec admin flask mailu admin --mode "${adminMode}" "${adminAccount}" "${domain}" "${adminPw}"
-        done
     fi
     local upgradable=$(sudo apt list --upgradable 2>/dev/null | tail -n +2 | cut -d/ -f1)
     if [[ -n "${upgradable}" ]]; then

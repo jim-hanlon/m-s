@@ -176,21 +176,17 @@ EOF
         while [[ "${lastBootstrapStatus}" != 'complete' ]]; do
             local s=$(instance:read-tag ${instance} BootstrapStatus)
             if [[ "${s}" != "${lastBootstrapStatus}" ]]; then
-                echo
-                echo -n "[INFO] instance ${instance} is ${s}" >/dev/stderr
+                echo -e -n "\n[INFO] instance ${instance} is ${s}" >/dev/stderr
             fi
             lastBootstrapStatus="${s}"
             if [[ "${lastBootstrapStatus}" != 'complete' ]]; then
                 sleep 5
-                echo -n '.'
+                echo -n '.' >/dev/stderr
             fi
         done
-        echo >/dev/stderr
-        echo "[INFO] instance bootstrap is complete" >/dev/stderr
-        echo "[INFO] remember to change the password for user 'postmaster'" >/dev/stderr
+        echo -e "\n[INFO] instance bootstrap is complete -- remember to change the password for user 'postmaster'" >/dev/stderr
     else
-        echo "[ERROR] failed to create instance" >/dev/stderr
-        echo "[ERROR] ${response}" >/dev/stderr
+        echo -e "[ERROR] failed to create instance\n[ERROR] ${response}" >/dev/stderr
         return 1
     fi
 }
@@ -370,7 +366,7 @@ function util:terminate-instance() {
 
 function util:terminate-instance-by-name() {
     local name=${1:?Need NAME}
-    util:terminate-instances $(util:instance-by-name "${name}")
+    util:terminate-instance $(util:instance-by-name "${name}")
 }
 
 

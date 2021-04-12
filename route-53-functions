@@ -110,7 +110,7 @@ function route-53:set-ipv4-a-or-cname-record() {
     shift
     for name in "${@}"; do
         local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
-        local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep grep "\s${domainName}\.\s" | awk '{print $3}' | cut -d/ -f3)
+        local hostedZoneId=$(aws route53 list-hosted-zones --output text | grep  "\s${domainName}\.\s" | awk '{print $3}' | cut -d/ -f3)
         local t=$(route-53:get-record-type "${name}")
         [[ -n "${t}" && "${t}" != "${type}" ]] && route-53:delete-record "${name}"
         local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON

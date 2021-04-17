@@ -128,6 +128,24 @@ function mailserver:create-accounts() {
 }
 
 
+function mailserver:create-resource-record-changeset() {
+    [[ -z "${1:-}" ]] && echo "${FUNCNAME[0]} mailhostname ipv4 [althost ...]" >/dev/stderr && return
+    local mailhostFQDN=${1:?Need mail host FQDN}
+    local ipv4=${2:?Need IPv4 address}
+    shift 2
+    local domain=$(echo "${mailhostFQDN}" | sed -E 's/^[^\.]*\.//')
+    local mailhost=$(echo "${mailhostFQDN}" | sed -E 's/^([^\.]*)\..*$/\1/')
+    local hosts=$(echo "${@}" | tr ' ' '\n' | grep -v "${mailhost}")
+    local changes=
+    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" A "${ipv4}" 300 "${mailhost}")
+    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" CNAME "${mailhostFQDN}" 300 ${hosts})
+    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" TXT "\\\"v=spf1 include:${domain} include:amazonses.com ~all\\\"" 3600 '')
+    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" MX "10 ${mailhostFQDN}." 3600 '')
+    changes="{\"Changes\":[${changes%,}]}"
+    echo $changes
+}
+
+
 function mailserver:get-account-emails() {
     local account=${1?:Need account}
     local domain=${1?:Need domain}

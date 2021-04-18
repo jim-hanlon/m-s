@@ -234,7 +234,7 @@ function mailserver:initialize() {
     mailserver:mount-mailserver-data
     mailserver:install_mailu_configuration
     mailserver:create-accounts
-    mailserver:set-a-records
+    mailserver:create-dns-records
     mailserver:install-crontab-reboot-entry
     mailserver:update-ubuntu-bashrc
 }

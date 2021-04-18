@@ -6,7 +6,9 @@ function route-53:apply-resource-record-changes() {
     shift
     local changes="${@}"
     local hostedZoneId=$(route-53:get-zone-id "${domainName}")
-    local result=$(echo "{ \"Changes\": [ ${changes} ] }" | aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin)
+    local changeBatch='{"Changes":['${changes}']}'
+    local result=$(echo ${changeBatch} | aws route53 change-resource-record-sets --debug --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin)
+    echo $result | jq .
 }
 
     
@@ -211,8 +213,7 @@ function route-53:create-resource-record-changes-subset() {
     for name in "${@}"; do
         echo "${name}"
     done | sort -u | while read name; do
-        local target=${domain}
-        [[ -n "${name}" ]] && target="${name}.${domain}"
+        local target=${name:-${domain}}
         route-53:get-record-info "${target}"
     done | while read id _ name curtype curttl curvalue; do
         if [[ "${type}" != "${curtype}" ]] || [[ "${ttl}" != "${curttl}" ]] || [[ "${value}" != "${curvalue}" ]]; then

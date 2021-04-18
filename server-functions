@@ -135,10 +135,13 @@ function mailserver:create-accounts() {
 
 
 function mailserver:create-dns-records() {
+    local publicIpv4=$(instance:public-ipv4)
     for domain in $(mailserver:get-mail-domain-names); do
-        local publicIpv4=$(instance:public-ipv4)
-        local fqdns=$(mailserver:get-additional-host-fqdns)
-        local changes=$(mailserver:create-resource-record-changeset "mail.${domain}" ${publicIpv4} ${fqdns})
+        local mailHostName="mail.${domain}"
+        local fqdns=$(mailserver:get-additional-host-fqdns "${domain}")
+        local changes=$(mailserver:create-resource-record-changeset "${mailHostName}" "${publicIpv4}" ${fqdns})
+        # echo route-53:apply-resource-record-changes "${domain}" ...
+        # echo "[${changes}]" | jq .
         route-53:apply-resource-record-changes "${domain}" "${changes}"
     done
 }
@@ -153,12 +156,11 @@ function mailserver:create-resource-record-changeset() {
     local mailhost=$(echo "${mailhostFQDN}" | sed -E 's/^([^\.]*)\..*$/\1/')
     local hosts=$(echo "${@}" | tr ' ' '\n' | grep -v "${mailhost}")
     local changes=
-    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" A "${ipv4}" 300 "${mailhost}")
+    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" A "${ipv4}" 300 "${mailhostFQDN}")
     changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" CNAME "${mailhostFQDN}" 300 ${hosts})
     changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" TXT "\\\"v=spf1 include:${domain} include:amazonses.com ~all\\\"" 3600 '')
     changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" MX "10 ${mailhostFQDN}." 3600 '')
-    changes="{\"Changes\":[${changes%,}]}"
-    echo $changes
+    echo ${changes%,}
 }
 
 

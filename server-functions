@@ -23,6 +23,7 @@ source "${prgdir}/route-53-functions"
 
 
 function instance:create-tag() {
+    [[ -z "${1:-}" ]] && echo "${FUNCNAME[0]} key value" >/dev/stderr && return
     local key=${1:?Need key}
     local value=${2?Need value}
     local instanceId=$(instance:id)
@@ -32,6 +33,7 @@ function instance:create-tag() {
 
 
 function instance:delete-tag() {
+    [[ -z "${1:-}" ]] && echo "${FUNCNAME[0]} key" >/dev/stderr && return
     local key=${1:?Need key}
     local value=${2:-''}
     local instanceId=$(instance:id)
@@ -58,6 +60,7 @@ function instance:public-ipv4() {
 
 
 function instance:read-tag() {
+    [[ -z "${1:-}" ]] && echo "${FUNCNAME[0]} key" >/dev/stderr && return
     local key=${1:?Need key}
     local instanceId=$(instance:id)
     local region=$(instance:region)
@@ -112,7 +115,10 @@ function mailserver:create-accounts() {
         local password=$(echo "${usersSecret}" | jq -r ".users[$i].password")
         local aliases=$(echo "${usersSecret}" | jq -r ".users[$i].aliases")
         local alias_wildcard=$(echo "${usersSecret}" | jq -r ".users[$i].alias_wildcard")
-        local wildcardOption=$(([[ "$alias_wildcard" == 'true' ]] && echo '--wildcard') || echo '')
+        local wildcardOption=''
+        if [[ "$alias_wildcard" == 'true' ]]; then
+            wildcardOption='--wildcard'
+        fi
         local is_admin=$(echo "${usersSecret}" | jq -r ".users[$i].is_admin")
         docker-compose -p mailu exec admin flask mailu user-delete "${email}"
         docker-compose -p mailu exec admin flask mailu alias-delete "${email}"
@@ -124,6 +130,16 @@ function mailserver:create-accounts() {
         if [[ -n "${aliases}" ]]; then
             docker-compose -p mailu exec admin flask mailu alias "${wildcardOption}" "${name}" "${domain}" "${aliases}"
         fi
+    done
+}
+
+
+function mailserver:create-dns-records() {
+    for domain in $(mailserver:get-mail-domain-names); do
+        local publicIpv4=$(instance:public-ipv4)
+        local fqdns=$(mailserver:get-additional-host-fqdns)
+        local changes=$(mailserver:create-resource-record-changeset "mail.${domain}" ${publicIpv4} ${fqdns})
+        route-53:apply-resource-record-changes "${domain}" "${changes}"
     done
 }
 
@@ -147,8 +163,9 @@ function mailserver:create-resource-record-changeset() {
 
 
 function mailserver:get-account-emails() {
+    [[ -z "${1:-}" ]] && echo "${FUNCNAME[0]} account domain" >/dev/stderr && return
     local account=${1?:Need account}
-    local domain=${1?:Need domain}
+    local domain=${2?:Need domain}
     sqlite3 "${MAILSERVER_DATA_MOUNTPOINT}" \
             "select email from user where localpart='${account}' and domain_name='${domain}'"
 }
@@ -160,7 +177,20 @@ function mailserver:get-additional-domain-names() {
     cut -d= -f2 | \
     tr ',' '\n' | \
     perl -0777 -pe 's/(?:[a-z]+\.)?([a-z\.]*)/\1/g' | \
-    grep -v "$(mailserver:get-primary-domain-name)" | \
+    grep -v "^mail\.$(mailserver:get-primary-domain-name)\$" | \
+    sort -u
+}
+
+
+function mailserver:get-additional-host-fqdns() {
+    [[ -z "${1:-}" ]] && echo "${FUNCNAME[0]} domain" >/dev/stderr && return
+    local domain=${1?:Need domain}
+    cat "${MAILSERVER_CONFIGURATION_FILE}" | \
+    grep -E '^HOSTNAMES=' | \
+    cut -d= -f2 | \
+    tr ',' '\n' | \
+    grep "\.${domain}\$" | \
+    grep -v '^mail\.' | \
     sort -u
 }
 
@@ -185,6 +215,7 @@ function mailserver:get-primary-domain-name() {
 
 
 function mailserver:get-secret() {
+    [[ -z "${1:-}" ]] && echo "${FUNCNAME[0]} secret-name" >/dev/stderr && return
     local secretId=${1:?Need secret name}
     local region=$(instance:region)
     aws secretsmanager get-secret-value --region "${region}" --secret-id "${secretId}" | jq -r .SecretString

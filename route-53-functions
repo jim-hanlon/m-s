@@ -1,5 +1,53 @@
 #!/bin/bash
 
+
+function route-53:apply-resource-record-changes() {
+    local domainName=${1:?Need domain name}
+    shift
+    local changes="${@}"
+    local hostedZoneId=$(route-53:get-zone-id "${domainName}")
+    local result=$(echo "{ \"Changes\": [ ${changes} ] }" | aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin)
+}
+
+    
+function route-53:set-ipv4-a-or-cname-record() {
+    local type=${1:?Need record type}
+    shift
+    local address=${1:?Need  address}
+    shift
+    local ttl=${1:-300}
+    shift
+    for name in "${@}"; do
+        local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
+        local hostedZoneId=$(route-53:get-zone-id "${domainName}")
+        local t=$(route-53:get-record-type "${name}")
+        [[ -n "${t}" && "${t}" != "${type}" ]] && route-53:delete-record "${name}"
+        local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
+{
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "${name}.",
+        "Type": "${type}",
+        "TTL": ${ttl},
+        "ResourceRecords": [
+          {
+            "Value": "${address}"
+          }
+        ]
+      }
+    }
+  ]
+}
+END_OF_JSON
+        )
+    done
+}
+
+
+
+
 function route-53:delete-record {
     for name in "${@}"; do
         local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')

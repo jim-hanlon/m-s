@@ -7,47 +7,34 @@ function route-53:apply-resource-record-changes() {
     local changes="${@}"
     local hostedZoneId=$(route-53:get-zone-id "${domainName}")
     local changeBatch='{"Changes":['${changes}']}'
-    local result=$(echo ${changeBatch} | aws route53 change-resource-record-sets --debug --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin)
-    echo $result | jq .
-}
-
-    
-function route-53:set-ipv4-a-or-cname-record() {
-    local type=${1:?Need record type}
-    shift
-    local address=${1:?Need  address}
-    shift
-    local ttl=${1:-300}
-    shift
-    for name in "${@}"; do
-        local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
-        local hostedZoneId=$(route-53:get-zone-id "${domainName}")
-        local t=$(route-53:get-record-type "${name}")
-        [[ -n "${t}" && "${t}" != "${type}" ]] && route-53:delete-record "${name}"
-        local result=$(aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin <<END_OF_JSON
-{
-  "Changes": [
-    {
-      "Action": "UPSERT",
-      "ResourceRecordSet": {
-        "Name": "${name}.",
-        "Type": "${type}",
-        "TTL": ${ttl},
-        "ResourceRecords": [
-          {
-            "Value": "${address}"
-          }
-        ]
-      }
-    }
-  ]
-}
-END_OF_JSON
-        )
-    done
+    local result=$(echo ${changeBatch} | aws route53 change-resource-record-sets --hosted-zone-id "${hostedZoneId}" --change-batch file:///dev/stdin)
 }
 
 
+function route-53:create-resource-record-changes-subset() {
+    [[ -z "${1:-}" ]] && echo "${FUNCNAME[0]} domain type value ttl [name ...]" >/dev/stderr && return
+    local domain=${1:?Need domain}
+    local type=${2:?Need record type}
+    local value=${3:?Need value}
+    local ttl=${4:-300}
+    shift 4
+    if [[ -n "${*}" ]]; then
+        # name is "foo.{domain}
+        echo "${@}" | tr ' ' '\n' | sort -u | while read name; do
+            route-53:get-record-info "${name}"
+        done | while read name curdomain zoneid curtype curttl curvalue; do
+            if [[ "${type}" != "${curtype}" ]] || [[ "${ttl}" != "${curttl}" ]] || [[ "${value}" != "${curvalue}" ]]; then
+                if [[ "${zoneid}" != "-" ]] && [[ "${curtype}" != "-" ]] && [[ "${curttl}" != "-" ]]; then
+                    echo "{\"Action\":\"DELETE\",\"ResourceRecordSet\":{\"Name\":\"${name}.\",\"Type\":\"${curtype}\",\"TTL\":${curttl},\"ResourceRecords\":[{\"Value\":\"${curvalue}\"}]}},"
+                fi
+                echo "{\"Action\":\"UPSERT\",\"ResourceRecordSet\":{\"Name\":\"${name}.\",\"Type\":\"${type}\",\"TTL\":${ttl},\"ResourceRecords\":[{\"Value\":\"${value}\"}]}},"
+            fi
+        done
+    else
+        # A domain level entry ...
+        echo "{\"Action\":\"UPSERT\",\"ResourceRecordSet\":{\"Name\":\"${domain}.\",\"Type\":\"${type}\",\"TTL\":${ttl},\"ResourceRecords\":[{\"Value\":\"${value}\"}]}},"
+    fi
+}
 
 
 function route-53:delete-record {
@@ -86,20 +73,20 @@ END_OF_JSON
 function route-53:get-record-info() {
     local name=
     for name in "${@}"; do
-        local domain="${name}"
-        if (( $(echo "${name}" | tr '.' ' ' | wc -w) > 2 )); then
-            domain=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
-        fi
+        local domain=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
+        local retval="${name} ${domain} - - - -"
         local id=$(route-53:get-zone-id "${domain}")
-        local result=$(aws route53 list-resource-record-sets --hosted-zone-id "${id}" --query "ResourceRecordSets[?Name == '${name#.}.']")
-        if [[ $(echo "${result}" | jq length) != '0' ]]; then
-            local type=$(echo "${result}" | jq -r .[0].Type)
-            local ttl=$(echo "${result}" | jq -r .[0].TTL)
-            local value=$(echo "${result}" | jq -r .[0].ResourceRecords[0].Value)
-            echo ${id} ${domain} ${name} ${type} ${ttl} ${value}
-        else
-            echo ${id} ${domain} ${name} - - -
+        if [[ -n "${id}" ]]; then
+            retval="${name} ${domain} ${id} - - -"
+            local result=$(aws route53 list-resource-record-sets --hosted-zone-id "${id}" --query "ResourceRecordSets[?Name == '${name#.}.']")
+            if (( $(echo "${result}" | jq length) == 1 )); then
+                local type=$(echo "${result}" | jq -r .[0].Type | sed -E 's/^null$/-/')
+                local ttl=$(echo "${result}" | jq -r .[0].TTL | sed -E 's/^null$/-/')
+                local value=$(echo "${result}" | jq -r .[0].ResourceRecords[0].Value | sed -E 's/^null$/-/')
+                retval="${name} ${domain} ${id} ${type} ${ttl} ${value}"
+            fi
         fi
+        echo "${retval}"
     done
 }
 
@@ -109,7 +96,8 @@ function route-53:get-record-ttl() {
     local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
     local id=$(route-53:get-zone-id "${domainName}")
     aws route53 list-resource-record-sets --hosted-zone-id "${id}" --query "ResourceRecordSets[?Name == '${name#.}.']" | \
-    jq -r .[0].TTL
+    jq -r .[0].TTL | \
+    grep -vE '^null$'
 }
 
 
@@ -118,7 +106,8 @@ function route-53:get-record-type() {
     local domainName=$(echo "${name}" | sed -E 's/^[^\.]*\.//')
     local id=$(route-53:get-zone-id "${domainName}")
     aws route53 list-resource-record-sets --hosted-zone-id "${id}" --query "ResourceRecordSets[?Name == '${name#.}.']" | \
-    jq -r .[0].Type
+    jq -r .[0].Type | \
+    grep -vE '^null$'
 }
 
 
@@ -135,14 +124,17 @@ function route-53:get-zone-id() {
     local name=${1:?Need Zone Name}
     aws route53 list-hosted-zones --query "HostedZones[?Name == '${name#.}.']" | \
     jq -r .[0].Id | \
-    cut -d/ -f3
+    cut -d/ -f3 | \
+    grep -vE '^null$'
 }
+
 
 function route-53:get-zone-name() {
     local id=${1:?Need Zone ID}
     aws route53 get-hosted-zone --id "${id}" | \
     jq -r '.HostedZone.Name' | \
-    sed 's/\.$//'
+    sed 's/\.$//' | \
+    grep -vE '^null$'
 }
 
 
@@ -203,24 +195,3 @@ END_OF_JSON
 }
 
 
-function route-53:create-resource-record-changes-subset() {
-    [[ -z "${1:-}" ]] && echo "${FUNCNAME[0]} domain type value ttl [name ...]" >/dev/stderr && return
-    local domain=${1:?Need domain}
-    local type=${2:?Need record type}
-    local value=${3:?Need value}
-    local ttl=${4:-300}
-    shift 4
-    for name in "${@}"; do
-        echo "${name}"
-    done | sort -u | while read name; do
-        local target=${name:-${domain}}
-        route-53:get-record-info "${target}"
-    done | while read id _ name curtype curttl curvalue; do
-        if [[ "${type}" != "${curtype}" ]] || [[ "${ttl}" != "${curttl}" ]] || [[ "${value}" != "${curvalue}" ]]; then
-            if [[ "${type}" != "${curtype}" ]] && [[ "${curtype}" != "-" ]]; then
-                echo "{\"Action\":\"DELETE\",\"ResourceRecordSet\":{\"Name\":\"${name}.\",\"Type\":\"${curtype}\",\"TTL\":${curttl},\"ResourceRecords\":[{\"Value\":\"${curvalue}\"}]}},"
-            fi
-            echo "{\"Action\":\"UPSERT\",\"ResourceRecordSet\":{\"Name\":\"${name}.\",\"Type\":\"${type}\",\"TTL\":${ttl},\"ResourceRecords\":[{\"Value\":\"${value}\"}]}},"
-        fi
-    done
-}

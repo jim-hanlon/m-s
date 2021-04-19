@@ -158,8 +158,9 @@ function mailserver:create-resource-record-changeset() {
     local changes=
     changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" A "${ipv4}" 300 "${mailhostFQDN}")
     changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" CNAME "${mailhostFQDN}" 300 ${hosts})
-    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" TXT "\\\"v=spf1 include:${domain} include:amazonses.com ~all\\\"" 3600 '')
-    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" MX "10 ${mailhostFQDN}." 3600 '')
+    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" MX "10 ${mailhostFQDN}." 3600)
+    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" SPF "\\\"v=spf1 include:${domain} include:amazonses.com ~all\\\"" 3600)
+    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" TXT "\\\"v=spf1 include:${domain} include:amazonses.com ~all\\\"" 3600)
     echo ${changes%,}
 }
 

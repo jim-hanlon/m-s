@@ -108,7 +108,7 @@ function mailserver:create-accounts() {
 
     local usersSecret=$(mailserver:get-secret mailserver-users)
     local nUsers=$(echo "${usersSecret}" | jq '.users | length')
-    for i in $(seq 0 $(($l-1))); do
+    for i in $(seq 0 $(($nUsers-1))); do
         local name=$(echo "${usersSecret}" | jq -r ".users[$i].name")
         local domain=$(echo "${usersSecret}" | jq -r ".users[$i].domain")
         local email="${name}@${domain}"

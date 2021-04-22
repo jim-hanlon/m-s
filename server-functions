@@ -310,9 +310,12 @@ function mailserver:mount-mailserver-data() {
     local availabilityZone=$(instance:availability-zone)
     local region=$(instance:region)
     local fileSystemId=$(aws --region ${region} efs describe-file-systems | \
-                         jq -r '.FileSystems | select(.[].Tags[].Key == "Name") | select(.[].Tags[].Value == "'${MAILSERVER_DATA_FILESYSTEM}'") | .[].FileSystemId')
-    local fileSystemName="${fileSystemId}.efs.${region}.amazonaws.com" 
-    echo "${fileSystemName}:/ ${MAILSERVER_DATA_MOUNTPOINT} nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 0 0" >> /etc/fstab
+                         jq -r '.FileSystems[] | { "FileSystemId": .FileSystemId, "Tags": .Tags[] } | { "FileSystemId": .FileSystemId, "Key": .Tags.Key, "Value": .Tags.Value } | select(.Key == "Name" and .Value == "'${MAILSERVER_DATA_FILESYSTEM}'") | .FileSystemId')
+    local fileSystemName="${fileSystemId}.efs.${region}.amazonaws.com"
+    local tmpfile=/tmp/mailserver-mount-mailserver-data-${$}-${RANDOM}
+    cat /etc/fstab | grep -vE "^${fileSystemName}:/" > "${tmpfile}"
+    (cat "${tmpfile}" && echo "${fileSystemName}:/ ${MAILSERVER_DATA_MOUNTPOINT} nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 0 0") > /etc/fstab
+    rm -f "${tmpfile}"
     mkdir -p "${MAILSERVER_DATA_MOUNTPOINT}"
     chown nobody:nogroup "${MAILSERVER_DATA_MOUNTPOINT}"
     mount "${MAILSERVER_DATA_MOUNTPOINT}"

@@ -9,6 +9,7 @@ export MAILSERVER_CONFIGURATION_FILE=${MAILSERVER_CONFIGURATION_FILE:-${MAILSERV
 export MAILSERVER_CONFIGURATION_FILE_TEMPLATE=${MAILSERVER_CONFIGURATION_FILE_TEMPLATE:-${MAILSERVER_CONFIGURATION_FILE}.tmpl8}
 export MAILSERVER_DATA_FILESYSTEM=${MAILSERVER_DATA_FILESYSTEM:-mailserver-data}
 export MAILSERVER_DATA_MOUNTPOINT=${MAILSERVER_DATA_MOUNTPOINT:-/var/mail}
+export MAILSERVER_MAILU_DATABASE=${MAILSERVER_MAILU_DATABASE:-${MAILSERVER_DATA_MOUNTPOINT}/data/main.db}
 export MAILSERVER_DOCKER_COMPOSE_FILE=${MAILSERVER_DOCKER_COMPOSE_FILE:-${MAILSERVER_HOME}/docker-compose.yml}
 export MAILSERVER_DOCKER_COMPOSE_FILE_TEMPLATE=${MAILSERVER_DOCKER_COMPOSE_FILE_TEMPLATE:-${MAILSERVER_DOCKER_COMPOSE_FILE}.tmpl8}
 export MAILSERVER_TOOLS_URL_PREFIX=${MAILSERVER_TOOLS_URL_PREFIX:-https://raw.githubusercontent.com/jim-hanlon/m-s/main}
@@ -92,19 +93,24 @@ function instance:set-cname-records() {
 
 
 function mailserver:create-accounts() {
-    local adminSecret=$(mailserver:get-secret mailserver-admin)
-    local adminAccount=$(echo "${adminSecret}" | jq -r '.admin_account')
-    local adminEmail="${adminAccount}@$(mailserver:get-primary-domain-name)"
-    local adminPw=$(echo "${adminSecret}" | jq -r '.admin_pw')
-    docker-compose -p mailu exec admin flask mailu user-delete "${adminEmail}"
-    docker-compose -p mailu exec admin flask mailu alias-delete "${adminEmail}"
-    docker-compose -p mailu exec admin flask mailu admin "${adminAccount}" "$(mailserver:get-primary-domain-name)" "${adminPw}"
-    local aliases=
-    for domain in $(mailserver:get-additional-domain-names); do
-        aliases="${aliases},${adminAccount}@${domain}"
-    done
-    aliases=$(echo "${aliases}" | cut -d, -f2-)
-    docker-compose -p mailu exec admin flask mailu alias "${adminAccount}" "$(mailserver:get-primary-domain-name)" "${aliases}"
+    sqlite3 "${MAILSERVER_MAILU_DATABASE}" 'delete from user;'
+    sqlite3 "${MAILSERVER_MAILU_DATABASE}" 'delete from alias;'
+
+    if ${MAILSERVER_CREATE_ADMIN:-false}; then
+        local adminSecret=$(mailserver:get-secret mailserver-admin)
+        local adminAccount=$(echo "${adminSecret}" | jq -r '.admin_account')
+        local adminEmail="${adminAccount}@$(mailserver:get-primary-domain-name)"
+        local adminPw=$(echo "${adminSecret}" | jq -r '.admin_pw')
+        docker-compose -p mailu exec admin flask mailu user-delete "${adminEmail}"
+        docker-compose -p mailu exec admin flask mailu alias-delete "${adminEmail}"
+        docker-compose -p mailu exec admin flask mailu admin "${adminAccount}" "$(mailserver:get-primary-domain-name)" "${adminPw}"
+        local aliases=
+        for domain in $(mailserver:get-additional-domain-names); do
+            aliases="${aliases},${adminAccount}@${domain}"
+        done
+        aliases=$(echo "${aliases}" | cut -d, -f2-)
+        docker-compose -p mailu exec admin flask mailu alias "${adminAccount}" "$(mailserver:get-primary-domain-name)" "${aliases}"
+    fi
 
     local usersSecret=$(mailserver:get-secret mailserver-users)
     local nUsers=$(echo "${usersSecret}" | jq '.users | length')

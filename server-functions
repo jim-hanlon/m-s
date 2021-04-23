@@ -263,8 +263,6 @@ function mailserver:install() {
     if [[ "${bootstrapStatus}" != "complete" ]] && 
         [[ "${bootstrapStatus}" != "rebooting" ]]; then
         instance:create-tag BootstrapStatus 'initializing mailserver'
-        mailserver:initialize
-        mailserver:start
     fi
     local upgradable=$(sudo apt list --upgradable 2>/dev/null | tail -n +2 | cut -d/ -f1)
     if [[ -n "${upgradable}" ]]; then
@@ -277,6 +275,8 @@ function mailserver:install() {
     else
         instance:create-tag BootstrapStatus complete
     fi
+    mailserver:initialize
+    mailserver:start
 }
 
 

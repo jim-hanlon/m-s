@@ -237,6 +237,23 @@ function mailserver:install() {
         echo "[INFO] mailserver:install complete"
         instance:create-tag BootstrapStatus complete
     fi
+    cat /dev/stdin >/usr/local/bin/json2yaml <<EOF
+#!/usr/bin/env python3
+
+import sys
+import json
+import yaml
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('json_file', nargs='?', type=argparse.FileType('r'), default=sys.stdin)
+
+json_file = parser.parse_args().json_file
+json_body = json.loads(json_file.read())
+yaml_body = yaml.dump(json_body, default_flow_style=False)
+print(yaml_body, end='')
+EOF
+    chmod 755 /usr/local/bin/json2yaml
     mailserver:initialize
     mailserver:start
 }
@@ -323,6 +340,8 @@ function mailserver:update-ubuntu-bashrc() {
 
 function mailserver:update-accounts() {
     echo "[INFO] mailserver:update-accounts start"
+    aliasesJson=
+    usersJson=
     if ${MAILSERVER_CREATE_ADMIN:-false}; then
         echo "[INFO] mailserver:update-accounts create admin account"
         local domain=$(mailserver:get-primary-domain-name)
@@ -330,12 +349,9 @@ function mailserver:update-accounts() {
         local adminAccount=$(echo "${adminSecret}" | jq -r '.admin_account')
         local adminEmail="${adminAccount}@$(mailserver:get-primary-domain-name)"
         local adminPw=$(echo "${adminSecret}" | jq -r '.admin_pw')
-        echo "[INFO] mailserver:update-accounts user-delete ${adminEmail}"
-        docker-compose -p mailu exec admin flask mailu user-delete "${adminEmail}"
-        echo "[INFO] mailserver:update-accounts alias-delete ${adminEmail}"
-        docker-compose -p mailu exec admin flask mailu alias-delete "${adminEmail}"
-        echo "[INFO] mailserver:update-accounts admin ${adminAccont} ${domain}"
-        docker-compose -p mailu exec admin flask mailu admin "${adminAccount}" "${domain}" "${adminPw}"
+        echo "[INFO] mailserver:update-accounts admin --mode update ${adminAccont} ${domain}"
+        docker-compose -p mailu exec admin flask mailu admin --mode update "${adminAccount}" "${domain}" "${adminPw}"
+        usersJson=""
         local aliases=
         for domain in $(mailserver:get-additional-domain-names); do
             aliases="${aliases},${adminAccount}@${domain}"
@@ -359,18 +375,8 @@ function mailserver:update-accounts() {
         if [[ "$alias_wildcard" == 'true' ]]; then
             wildcardOption='--wildcard'
         fi
-        local is_admin=$(echo "${usersSecret}" | jq -r ".users[$i].is_admin")
-        echo "[INFO] mailserver:update-accounts [$i] user-delete ${email}"
-        docker-compose -p mailu exec admin flask mailu user-delete "${email}"
-        echo "[INFO] mailserver:update-accounts [$i] alias-delete ${email}"
-        docker-compose -p mailu exec admin flask mailu alias-delete "${email}"
-        if [[ "${is_admin}" == "true" ]]; then
-            echo "[INFO] mailserver:update-accounts [$i] admin ${name} ${domain}"
-            docker-compose -p mailu exec admin flask mailu admin "${name}" "${domain}" "${password}"
-        else
-            echo "[INFO] mailserver:update-accounts [$i] user ${name} ${domain}"
-            docker-compose -p mailu exec admin flask mailu user "${name}" "${domain}" "${password}"
-        fi
+        echo "[INFO] mailserver:update-accounts admin --mode update ${name} ${domain}"
+        docker-compose -p mailu exec admin flask mailu admin --mode update "${name}" "${domain}" "${adminPw}"
         if [[ -n "${aliases}" ]]; then
             echo "[INFO] mailserver:update-accounts [$i] alias ${wildcardOption} ${name} ${domain} ${aliases}"
             docker-compose -p mailu exec admin flask mailu alias "${wildcardOption}" "${name}" "${domain}" "${aliases}"

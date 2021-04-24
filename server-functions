@@ -238,11 +238,17 @@ function mailserver:idle() {
 
 
 function mailserver:initialize() {
+    echo "[INFO] mailserver:initialize mount-mailserver-data"
     mailserver:mount-mailserver-data
+    echo "[INFO] mailserver:initialize install_mailu_configuration"
     mailserver:install_mailu_configuration
+    echo "[INFO] mailserver:initialize create-accounts"
     mailserver:create-accounts
+    echo "[INFO] mailserver:initialize create-dns-records"
     mailserver:create-dns-records
+    echo "[INFO] mailserver:initialize install-crontab-reboot-entry"
     mailserver:install-crontab-reboot-entry
+    echo "[INFO] mailserver:initialize update-ubuntu-bashrc"
     mailserver:update-ubuntu-bashrc
 }
 
@@ -259,20 +265,26 @@ function mailserver:install-crontab-reboot-entry() {
 
 
 function mailserver:install() {
+    echo "[INFO] mailserver:install start"
     bootstrapStatus=$(instance:read-tag BootstrapStatus)
+    echo "[INFO] mailserver:install BootstrapStatus=${bootstrapStatus}"
     if [[ "${bootstrapStatus}" != "complete" ]] && 
         [[ "${bootstrapStatus}" != "rebooting" ]]; then
         instance:create-tag BootstrapStatus 'initializing mailserver'
+        echo "[INFO] mailserver:install BootstrapStatus=$(instance:read-tag BootstrapStatus)"
     fi
     local upgradable=$(sudo apt list --upgradable 2>/dev/null | tail -n +2 | cut -d/ -f1)
     if [[ -n "${upgradable}" ]]; then
+        echo "[INFO] mailserver:install upgrade ${upgradable}"
         instance:create-tag BootstrapStatus "upgrading ${upgradable}"
         apt-get install -y ${upgradable}
     fi
     if [[ -f /var/run/reboot-required ]]; then
+        echo "[INFO] mailserver:install rebooting"
         instance:create-tag BootstrapStatus rebooting
         reboot
     else
+        echo "[INFO] mailserver:install complete"
         instance:create-tag BootstrapStatus complete
     fi
     mailserver:initialize
@@ -333,12 +345,14 @@ function mailserver:set-cnames() {
 
 
 function mailserver:start() {
+    echo "[INFO] mailserver:start"
     cd "${MAILSERVER_HOME}"
     docker-compose -p mailu up -d
 }
 
 
 function mailserver:stop() {
+    echo "[INFO] mailserver:stop"
     cd "${MAILSERVER_HOME}"
     docker-compose -p mailu down --remove-orphans
 }

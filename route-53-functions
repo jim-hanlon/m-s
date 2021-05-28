@@ -15,7 +15,7 @@ function route-53:create-resource-record-changes-subset() {
     [[ -z "${1:-}" ]] && echo "${FUNCNAME[0]} domain type value ttl [name ...]" >/dev/stderr && return
     local domain=${1:?Need domain}
     local type=${2:?Need record type}
-    local value=${3:?Need value}
+    local value="${3:?Need value}"
     local ttl=${4:-300}
     shift 4
     if [[ -n "${*}" ]]; then

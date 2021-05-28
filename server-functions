@@ -113,13 +113,21 @@ function mailserver:create-resource-record-changeset() {
     local domain=$(echo "${mailhostFQDN}" | sed -E 's/^[^\.]*\.//')
     local mailhost=$(echo "${mailhostFQDN}" | sed -E 's/^([^\.]*)\..*$/\1/')
     local hosts=$(echo "${@}" | tr ' ' '\n' | grep -v "${mailhost}")
+    local mx=$(
+        local p=0
+        echo "${p} ${mailhostFQDN}"
+        for host in $(dig +short MX "${domain}" | awk '{print $2}'); do
+            ((p=p+10))
+            echo "${p} ${host}"
+        done
+    )
     local changes=
-    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" A "${ipv4}" 300 "${mailhostFQDN}")
-    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" CNAME "${mailhostFQDN}" 300 ${hosts})
-    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" MX "10 ${mailhostFQDN}." 3600)
-    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" SPF "\\\"v=spf1 include:${domain} include:amazonses.com ~all\\\"" 3600)
-    changes=${changes}$(route-53:create-resource-record-changes-subset "${domain}" TXT "\\\"v=spf1 include:${domain} include:amazonses.com ~all\\\"" 3600)
-    echo ${changes%,}
+    changes="${changes}"$(route-53:create-resource-record-changes-subset "${domain}" A "${ipv4}" 300 "${mailhostFQDN}")
+    changes="${changes}"$(route-53:create-resource-record-changes-subset "${domain}" CNAME "${mailhostFQDN}" 300 ${hosts})
+    changes="${changes}"$(route-53:create-resource-record-changes-subset "${domain}" MX "${mx}" 3600)
+    changes="${changes}"$(route-53:create-resource-record-changes-subset "${domain}" SPF "\\\"v=spf1 include:${domain} include:amazonses.com ~all\\\"" 3600)
+    changes="${changes}"$(route-53:create-resource-record-changes-subset "${domain}" TXT "\\\"v=spf1 include:${domain} include:amazonses.com ~all\\\"" 3600)
+    echo "${changes%,}"
 }
 
 
